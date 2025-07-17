@@ -3,8 +3,8 @@
 
 ENV_FILE="$HOME/wiz/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
-    echo "No .env file found. Initialization may not have completed."
-    exit 1
+	echo "No .env file found. Initialization may not have completed."
+	exit 1
 fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
