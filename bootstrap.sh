@@ -2,32 +2,13 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INIT_DIR="$SCRIPT_DIR/init"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
 BOOTSTRAP_DIR="$SCRIPT_DIR/bootstrap"
 
-# --- INIT PHASE ---
-echo "\n===== aweMe INIT PHASE =====\n"
-INIT_SCRIPTS=(
-    "prompt_env.sh"        # Prompt for environment variables and write .env
-    "extract_keys.sh"      # Copy and extract SSH keys
-    "setup_ssh_agent.sh"   # Set up SSH agent auto-load and permissions
-    "clone_dotfiles.sh"    # Clone dotfiles repo to .backup
-    "clone_wiz.sh"         # Clone the wiz repo
-)
-for script_name in "${INIT_SCRIPTS[@]}"; do
-    script_path="$INIT_DIR/$script_name"
-    if [ -f "$script_path" ]; then
-        echo "Running $script_path..."
-        bash "$script_path"
-    else
-        echo "Warning: $script_path not found, skipping."
-    fi
-    echo
-done
-
-# --- BOOTSTRAP PHASE ---
-echo "\n===== aweMe BOOTSTRAP PHASE =====\n"
+# --- WIZ BOOTSTRAP PHASE ---
+echo
+echo "===== WIZ BOOTSTRAP PHASE ====="
+echo
 BOOTSTRAP_SCRIPTS=(
     "update_upgrade.sh"        # Update and upgrade system packages first
     "install_essentials.sh"    # Install essential packages
@@ -36,7 +17,7 @@ BOOTSTRAP_SCRIPTS=(
     "configure_git.sh"         # Configure Git settings
     "backup_default_dots.sh"   # Backup default dotfiles
     "source_dotfiles.sh"       # Restore/symlink dotfiles from backup
-    "bootstrap_recap.sh"       # Show recap and welcome message
+    "recap_bootstrap.sh"       # Show recap and welcome message
 )
 for script_name in "${BOOTSTRAP_SCRIPTS[@]}"; do
     script_path="$BOOTSTRAP_DIR/$script_name"
@@ -63,5 +44,6 @@ for script_name in "${BOOTSTRAP_SCRIPTS[@]}"; do
     fi
     echo
 done
-
-echo "\n===== aweMe install.sh complete! =====\n"
+echo
+echo "===== WIZ bootstrap.sh complete! ====="
+echo
