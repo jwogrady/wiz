@@ -1,11 +1,13 @@
 #!/bin/bash
-# filepath: /home/john/wiz/init.sh
+# filepath: /home/john/wiz/install.sh
+# WIZ Install Script: Seamless init and bootstrap
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_FILE="$SCRIPT_DIR/init.log"
+LOG_FILE="$SCRIPT_DIR/install.log"
 ENV_FILE="$SCRIPT_DIR/.env"
+BOOTSTRAP_DIR="$SCRIPT_DIR/bootstrap"
 
 log() { printf "%s\n" "$1" | tee -a "$LOG_FILE"; }
 
@@ -166,6 +168,46 @@ clone_wiz() {
     fi
 }
 
+run_bootstrap() {
+    log "\n===== WIZ BOOTSTRAP PHASE =====\n"
+    if [[ ! -d "$BOOTSTRAP_DIR" ]]; then
+        log "No bootstrap directory found at $BOOTSTRAP_DIR"
+        return
+    fi
+    mapfile -d '' BOOTSTRAP_SCRIPTS < <(find "$BOOTSTRAP_DIR" -maxdepth 1 -type f -name "*.sh" -print0 | sort -z)
+    if [ "${#BOOTSTRAP_SCRIPTS[@]}" -eq 0 ]; then
+        log "No bootstrap scripts found in $BOOTSTRAP_DIR"
+        return
+    fi
+    echo "Bootstrap scripts to run:"
+    for idx in "${!BOOTSTRAP_SCRIPTS[@]}"; do
+        script_name="$(basename "${BOOTSTRAP_SCRIPTS[$idx]}")"
+        printf "  %2d. %s\n" "$((idx+1))" "$script_name"
+    done
+    echo
+    for script_path in "${BOOTSTRAP_SCRIPTS[@]}"; do
+        script_name="$(basename "$script_path")"
+        if [ -f "$script_path" ]; then
+            # Idempotency check for backup script
+            if [[ "$script_name" == "40-backup-default-dots.sh" ]]; then
+                MACHINE_NAME="$(hostname)"
+                TODAY="$(date +'%Y-%m-%d')"
+                if ls "$HOME/.backup/$MACHINE_NAME/${TODAY}_*" 1>/dev/null 2>&1; then
+                    echo "Backup for today already exists, skipping $script_name."
+                    continue
+                fi
+            fi
+            echo "Running $script_name..."
+            bash "$script_path"
+        else
+            echo "Warning: $script_name not found, skipping."
+        fi
+        echo
+    done
+    echo "===== WIZ bootstrap complete! ====="
+    echo
+}
+
 recap() {
     log "\n--- Initialization Recap ---"
     if [[ -f "$ENV_FILE" ]]; then
@@ -185,7 +227,7 @@ EOF
 
     echo
     echo "============================"
-    echo "  WIZ Init Recap"
+    echo "  WIZ Install Recap"
     echo "============================"
     echo
 
@@ -247,6 +289,7 @@ EOF
     fi
 }
 
+# Main install flow
 setup_env
 extract_keys
 setup_gitconfig
@@ -254,6 +297,7 @@ setup_ssh_agent
 clone_dotfiles
 clone_wiz
 recap
+run_bootstrap
 
-echo "===== WIZ init.sh complete! ====="
+echo "===== WIZ install.sh complete! ====="
 echo
