@@ -1,9 +1,9 @@
 #!/bin/bash
-# filepath: /home/john/wiz/init.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BOOTSTRAP_DIR="$SCRIPT_DIR/bootstrap"
 LOG_FILE="$SCRIPT_DIR/init.log"
 ENV_FILE="$SCRIPT_DIR/.env"
 
