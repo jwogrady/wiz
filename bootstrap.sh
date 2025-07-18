@@ -10,14 +10,14 @@ echo
 echo "===== WIZ BOOTSTRAP PHASE ====="
 echo
 BOOTSTRAP_SCRIPTS=(
-	"01-update_upgrade.sh"      # Update and upgrade system packages first
-	"02-install_essentials.sh"  # Install essential packages
-	"03-install_tools.sh"       # Install additional tools
-	"04-load_keys.sh"           # Load SSH or other keys
-	"05-configure_git.sh"       # Configure Git settings
-	"06-backup_default_dots.sh" # Backup default dotfiles
-	"07-source_dotfiles.sh"     # Restore/symlink dotfiles from backup
-	"08-recap_bootstrap.sh"     # Show recap and welcome message
+   "00-update-upgrade.sh"      # Update and upgrade system packages first
+   "10-install-essentials.sh"  # Install essential packages
+   "20-install-languages.sh"   # Install language runtimes
+   "30-install-tools.sh"       # Install additional tools
+   "40-backup-default-dots.sh" # Backup default dotfiles
+   "50-source-dotfiles.sh"     # Restore/symlink dotfiles from backup
+   "60-setup-shell.sh"         # Install and set up preferred shell
+   "70-recap-bootstrap.sh"     # Show recap and welcome message
 )
 for script_name in "${BOOTSTRAP_SCRIPTS[@]}"; do
 	script_path="$BOOTSTRAP_DIR/$script_name"
