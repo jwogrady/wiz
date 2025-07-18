@@ -11,12 +11,12 @@ echo "===== WIZ INIT PHASE ====="
 echo
 
 INIT_SCRIPTS=(
-	"prompt_env.sh"      # Prompt for environment variables and write .env
-	"extract_keys.sh"    # Copy and extract SSH keys
-	"setup_ssh_agent.sh" # Set up SSH agent auto-load and permissions
-	"clone_dotfiles.sh"  # Clone dotfiles repo to .backup (skips itself if not enabled)
-	"clone_wiz.sh"       # Clone the wiz repo
-	"init_recap.sh"      # Show recap of environment initialization
+	"01-prompt_env.sh"      # Prompt for environment variables and write .env
+	"02-extract_keys.sh"    # Copy and extract SSH keys
+	"03-setup_ssh_agent.sh" # Set up SSH agent auto-load and permissions
+	"04-clone_dotfiles.sh"  # Clone dotfiles repo to .backup (skips itself if not enabled)
+	"05-clone_wiz.sh"       # Clone the wiz repo
+	"06-init_recap.sh"      # Show recap of environment initialization
 )
 for script_name in "${INIT_SCRIPTS[@]}"; do
 	script_path="$INIT_DIR/$script_name"
