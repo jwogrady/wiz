@@ -11,6 +11,13 @@ main() {
 
 	)
 
+	# Source aliases if present
+	ALIASES_FILE="$SCRIPT_DIR/aliases.sh"
+	if [[ -f "$ALIASES_FILE" ]]; then
+		. "$ALIASES_FILE"
+		log "Sourced aliases from $ALIASES_FILE"
+	fi
+
 	# Define the desired installation order (without .sh)
 	MODULES_ORDER=(
 		install_essentials      # Core system tools and dependencies
@@ -19,6 +26,7 @@ main() {
 		install_bun             # Bun (alternative JS runtime, optional/disabled)
 		install_neovim          # Neovim + AstroNvim config (after language tools)
 		# add more modules as needed, in order
+		summary_module          # Always runs last: prints system/install summary, next steps, aliases
 	)
 
 	# Helper: check if a module is disabled
@@ -43,4 +51,6 @@ main() {
 		) || warn "Module failed: $module_path (see install.log for details)"
 	done
 
-	# ... rest of your main() unchanged ...
+}  # End of main
+
+main  #
