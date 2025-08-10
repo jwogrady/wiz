@@ -1,33 +1,51 @@
 #!/usr/bin/env bash
-
 # 🌌 Cosmic Strip Club Neon Installer — You're glowing, babe
 
-set -e
+set -euo pipefail
 
-log() {
-  echo -e "\033[1;35m[✦] $1\033[0m"
+log() { printf "\033[1;35m[✦] %s\033[0m\n" "$1"; }
+
+append_once() {
+  # append_once <file> <exact_line>
+  local file="$1" line="$2"
+  touch "$file"
+  if ! grep -Fqx "$line" "$file"; then
+    printf "%s\n" "$line" >> "$file"
+    log "✅ Added to $(basename "$file"): $line"
+  else
+    log "✅ Already present in $(basename "$file")"
+  fi
 }
 
-run() {
-  log "$1"
-  eval "$1"
+install_starship() {
+  if command -v starship >/dev/null 2>&1; then
+    log "Starship already installed: $(command -v starship)"
+    return
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    log "Installing Starship via Homebrew…"
+    brew install starship
+  elif command -v apt-get >/dev/null 2>&1; then
+    log "Installing Starship via apt…"
+    sudo apt-get update -y
+    sudo apt-get install -y starship
+  else
+    log "Installing Starship via official script…"
+    curl -fsSL https://starship.rs/install.sh | bash -s -- -y
+  fi
 }
 
-log "Installing Starship (cross-shell prompt)..."
-run "curl -fsSL https://starship.rs/install.sh | bash -s -- -y"
+log "Installing Starship (cross-shell prompt)…"
+install_starship
 
-log "Adding Starship init to ~/.zshrc if not present..."
-if ! grep -q "eval \"\$(starship init zsh)\"" "$HOME/.zshrc" 2>/dev/null; then
-  echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
-  log "✅ Starship init line added to ~/.zshrc"
-else
-  log "✅ Starship already initialized in ~/.zshrc"
-fi
+log "Adding Starship init to ~/.zshrc and ~/.bashrc if not present…"
+append_once "$HOME/.zshrc" 'eval "$(starship init zsh)"'
+append_once "$HOME/.bashrc" 'eval "$(starship init bash)"'
 
-log "Creating Starship config directory at ~/.config if it doesn't exist..."
+log "Creating Starship config directory at ~/.config if it doesn't exist…"
 mkdir -p "$HOME/.config"
 
-log "Writing cosmic strip club neon starship.toml..."
+log "Writing cosmic strip club neon starship.toml…"
 cat > "$HOME/.config/starship.toml" <<'EOF'
 # ~/.config/starship.toml
 # 🌌 Cosmic Strip Club Neon — You're glowing, babe
@@ -79,7 +97,8 @@ symbol = "🐳 "
 style = "fg:#00bfff"  # neon ocean blue
 
 [container]
-format = "[$symbol \($name\)](fg:#ff00ff italic) "
+# IMPORTANT: use a TOML literal string to avoid invalid escapes
+format = '[$symbol \($name\)](fg:#ff00ff italic) '
 
 [time]
 disabled = false
@@ -105,5 +124,11 @@ zsh_indicator = "💅"
 style = "bold fg:#ff69b4"
 EOF
 
+log "Validating starship config…"
+if ! starship explain >/dev/null 2>&1; then
+  log "❌ Starship config failed to parse. Check ~/.config/starship.toml"
+  exit 1
+fi
+
 log "✨ Starship config installed successfully."
-log "Reload your shell or run: source ~/.zshrc"
+log "Reload your shell or run: source ~/.zshrc (zsh) / source ~/.bashrc (bash)"
