@@ -1,9 +1,14 @@
+#!/usr/bin/env bash
+
+# Source common utilities
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+
 # --- Main execution loop ---
 main() {
 	show_banner
 	log "Starting devbox bootstrap..."
 
-	SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 	MODULES_DIR="$SCRIPT_DIR/modules"
 
 	# List modules to disable (just the base name, without .sh)

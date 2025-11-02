@@ -39,4 +39,5 @@ if [[ -f "$ALIASES_FILE" ]]; then
   grep -E '^alias ' "$ALIASES_FILE" | sed -E "s/^alias ([^=]+)='([^']+)'$/\1: \2/" | sort
   echo "========================================================"
 else
-  echo "No aliases file found
+  echo "No aliases file found"
+fi

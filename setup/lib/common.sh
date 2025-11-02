@@ -82,5 +82,13 @@ run() {
 	if [[ "${DRY_RUN:-0}" -eq 1 ]]; then log "[DRY-RUN] $*"; else eval "$*"; fi
 }
 
+# --- Banner Display ---
+# show_banner: Displays a simple banner for the bootstrap script
+show_banner() {
+	echo "=================================="
+	echo "    🌌 WIZ BOOTSTRAP SETUP"
+	echo "=================================="
+}
+
 # Export all utility functions for use in subshells
-export -f log warn error atomic_write detect_os detect_shell run prepare_code_repo
+export -f log warn error atomic_write detect_os detect_shell run prepare_code_repo show_banner
