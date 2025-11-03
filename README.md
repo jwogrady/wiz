@@ -507,19 +507,25 @@ Contributions are welcome! Please follow these guidelines:
 ## 📚 Documentation
 
 - **README.md** (this file) - Project overview and usage
+- **CHANGELOG.md** - Auto-generated release notes and version history
+- **docs/RELEASE.md** - Release process and conventional commit guide
 - **lib/common.sh** - Inline documentation for utility functions
 - **lib/module-base.sh** - Module interface documentation
 - **logs/** - Detailed installation logs
 
 ## 🏷️ Versioning
 
-This project follows [Semantic Versioning 2.0.0](https://semver.org/):
+This project follows [Semantic Versioning 2.0.0](https://semver.org/) and uses automated releases via [Release Please](https://github.com/googleapis/release-please).
 
-- **MAJOR** version: Incompatible API changes
-- **MINOR** version: New functionality (backward-compatible)
-- **PATCH** version: Bug fixes (backward-compatible)
+- **MAJOR** version: Incompatible API changes (BREAKING CHANGE in commit)
+- **MINOR** version: New functionality (backward-compatible) (feat: commits)
+- **PATCH** version: Bug fixes (backward-compatible) (fix: commits)
+
+Releases are automatically created when commits are merged to master using [conventional commit messages](https://www.conventionalcommits.org/).
 
 **Current Version**: `0.2.0`
+
+For details on the release process, see [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Version History
 

@@ -1,0 +1,51 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/release-please-action@v4
+        id: release
+        with:
+          # This should match the name in your package metadata
+          release-type: simple
+          package-name: wiz
+          # Changelog sections
+          changelog-types: '[
+            {"type":"feat","section":"Features","hidden":false},
+            {"type":"fix","section":"Bug Fixes","hidden":false},
+            {"type":"chore","section":"Miscellaneous","hidden":false},
+            {"type":"docs","section":"Documentation","hidden":false},
+            {"type":"refactor","section":"Code Refactoring","hidden":false},
+            {"type":"perf","section":"Performance Improvements","hidden":false},
+            {"type":"test","section":"Tests","hidden":false},
+            {"type":"build","section":"Build System","hidden":false},
+            {"type":"ci","section":"Continuous Integration","hidden":false}
+          ]'
+          
+      # Optional: Create a GitHub Release with assets
+      - name: Checkout Code
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@v4
+        
+      - name: Create Release Archive
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          # Create a clean archive for the release
+          git archive --format=tar.gz --prefix=wiz-${{ steps.release.outputs.tag_name }}/ HEAD > wiz-${{ steps.release.outputs.tag_name }}.tar.gz
+          
+      - name: Upload Release Archive
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ steps.release.outputs.tag_name }} wiz-${{ steps.release.outputs.tag_name }}.tar.gz
