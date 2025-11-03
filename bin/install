@@ -144,7 +144,8 @@ EOF
 
 # --- Parse Command-Line Arguments ---
 parse_args() {
-    while [[ $# -gt 0 ]]; do
+    cd ~/wiz
+    ./bin/install --skip-identity    while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h)
                 show_help
@@ -755,10 +756,25 @@ main() {
     else
         # Full installation complete
         log "Next steps:"
-        log "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
-        log "  2. Review configuration files in ~/.config/"
-        log "  3. Check installed tools: git, docker, nvim, node, etc."
+        log "  1. Review configuration files in ~/.config/"
+        log "  2. Check installed tools: git, docker, nvim, node, etc."
         echo ""
+        
+        # Automatically reload shell
+        log "${BOLD}✨ Reloading shell to apply all changes...${NC}"
+        echo ""
+        
+        # Give user a moment to read the message
+        sleep 1
+        
+        # Exec into new shell (replaces current process)
+        if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
+            exec zsh
+        elif [[ -f "$HOME/.bashrc" ]]; then
+            exec bash
+        else
+            log "Please restart your terminal manually to apply changes."
+        fi
     fi
 }
 
