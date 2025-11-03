@@ -144,8 +144,7 @@ EOF
 
 # --- Parse Command-Line Arguments ---
 parse_args() {
-    cd ~/wiz
-    ./bin/install --skip-identity    while [[ $# -gt 0 ]]; do
+    while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h)
                 show_help
