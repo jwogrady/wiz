@@ -331,10 +331,10 @@ verify_starship() {
     fi
     
     # Validate config (optional)
-    if command_exists starship && starship config 2>/dev/null | grep -q "format"; then
+    if command_exists starship && starship config </dev/null 2>/dev/null | grep -q "format"; then
         debug "  ✓ Config file valid"
     else
-        warn "Config validation unavailable (starship config command not supported)"
+        debug "Config validation skipped"
     fi
     
     if [[ $failed -gt 0 ]]; then
@@ -342,32 +342,7 @@ verify_starship() {
         return 1
     fi
     
-    success "All verifications passed"
-    
-    # Show usage info
-    cat <<EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  STARSHIP INSTALLED ✨
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Restart your shell or run:
-    source ~/.zshrc
-
-  Configuration:
-    Edit: $STARSHIP_CONFIG
-    
-  Commands:
-    starship --version          Show version
-    starship config             Validate config
-    starship preset --list      List presets
-    starship explain            Test prompt rendering
-
-  More info: https://starship.rs/
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
-    
+    success "Starship installation verified successfully"
     return 0
 }
 
