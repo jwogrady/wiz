@@ -73,18 +73,12 @@ main() {
     
     # Clone repository if not already present
     if [[ -d "$WIZ_DIR" ]]; then
-        warn "Wiz directory already exists at ${WIZ_DIR}"
-        read -rp "Remove and re-clone? [y/N]: " response
-        
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            log "Removing existing directory..."
-            rm -rf "$WIZ_DIR"
-        else
-            log "Using existing directory..."
-            cd "$WIZ_DIR"
-            log "Updating repository..."
-            git pull origin main || warn "Could not update repository"
-        fi
+        log "Wiz directory already exists at ${WIZ_DIR}"
+        log "Updating existing repository..."
+        cd "$WIZ_DIR"
+        git pull origin main 2>/dev/null || {
+            warn "Could not update repository, using existing version"
+        }
     fi
     
     if [[ ! -d "$WIZ_DIR" ]]; then
