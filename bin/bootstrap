@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Wiz - Terminal Magic: Bootstrap Script (Phase 1)
+# ==============================================================================
+# This script is designed to be curl-piped from GitHub for initial setup.
+# It clones the repo and runs Phase 1 (identity & SSH setup only).
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | bash
+#
+# ==============================================================================
+
+set -euo pipefail
+
+# --- Color Codes ---
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly RED='\033[0;31m'
+readonly BLUE='\033[0;34m'
+readonly MAGENTA='\033[0;35m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
+
+# --- Logging ---
+log() { echo -e "${GREEN}→${NC} $*"; }
+warn() { echo -e "${YELLOW}⚠${NC} $*" >&2; }
+error() { echo -e "${RED}✖${NC} $*" >&2; exit 1; }
+success() { echo -e "${GREEN}${BOLD}✓${NC} $*"; }
+
+# --- Banner ---
+show_banner() {
+    cat <<'EOF'
+
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║   🌌  WIZ - TERMINAL MAGIC  ✨                            ║
+║                                                            ║
+║   Phase 1: Identity & SSH Setup                           ║
+║   https://github.com/jwogrady/wiz                          ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+
+EOF
+}
+
+# --- Check Requirements ---
+check_requirements() {
+    local missing=()
+    
+    for cmd in git curl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing+=("$cmd")
+        fi
+    done
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        error "Missing required commands: ${missing[*]}"
+    fi
+}
+
+# --- Main ---
+main() {
+    show_banner
+    
+    log "Starting Wiz bootstrap (Phase 1)..."
+    echo ""
+    
+    # Check requirements
+    check_requirements
+    
+    # Define installation directory
+    local WIZ_DIR="${HOME}/wiz"
+    
+    # Clone repository if not already present
+    if [[ -d "$WIZ_DIR" ]]; then
+        warn "Wiz directory already exists at ${WIZ_DIR}"
+        read -rp "Remove and re-clone? [y/N]: " response
+        
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            log "Removing existing directory..."
+            rm -rf "$WIZ_DIR"
+        else
+            log "Using existing directory..."
+            cd "$WIZ_DIR"
+            log "Updating repository..."
+            git pull origin main || warn "Could not update repository"
+        fi
+    fi
+    
+    if [[ ! -d "$WIZ_DIR" ]]; then
+        log "Cloning Wiz repository..."
+        git clone https://github.com/jwogrady/wiz.git "$WIZ_DIR" || error "Failed to clone repository"
+        success "Repository cloned to ${WIZ_DIR}"
+    fi
+    
+    echo ""
+    log "Switching to ${WIZ_DIR}..."
+    cd "$WIZ_DIR"
+    
+    # Make install script executable
+    chmod +x bin/install
+    
+    # Run Phase 1 only (identity setup, skip modules)
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "Starting Phase 1: Identity & SSH Setup"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    ./bin/install --skip-modules "$@"
+}
+
+main "$@"
