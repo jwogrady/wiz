@@ -488,6 +488,49 @@ Contributions are welcome! Please follow these guidelines:
 4. **Test thoroughly**: Run with `--dry-run` and test on fresh system
 5. **Submit a pull request**
 
+### Working with Issues
+
+When fixing bugs or adding features related to GitHub issues:
+
+1. **Reference the issue** in your commit message:
+   ```bash
+   # Auto-closes issue when merged
+   git commit -m "fix(module): description of fix
+   
+   Fixes #123"
+   
+   # Just references without closing
+   git commit -m "feat(module): partial work on feature
+   
+   Related to #123"
+   ```
+
+2. **Document the fix** by commenting on the issue:
+   ```bash
+   # Using GitHub CLI
+   gh issue comment 123 --body "Fixed in commit abc1234
+   
+   ### Root Cause
+   Explanation of what was wrong
+   
+   ### Solution  
+   What you changed and why
+   
+   ### Testing
+   How to verify the fix works"
+   
+   # Or use the web interface at:
+   # https://github.com/jwogrady/wiz/issues/123
+   ```
+
+3. **Issue will auto-close** when commit with `Fixes #123` reaches master branch
+
+4. **Keywords that auto-close issues**:
+   - `Fixes #123`, `Closes #123`, `Resolves #123`
+   - `Fix #123`, `Close #123`, `Resolve #123`
+
+For more details, see [Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue).
+
 ### Adding a New Module
 
 1. Create `lib/modules/install_yourmodule.sh`
