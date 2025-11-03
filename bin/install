@@ -1,0 +1,830 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Wiz - Terminal Magic: Interactive Installer
+# ==============================================================================
+# Interactive setup for Git identity, SSH keys, and repository initialization.
+#
+# Features:
+#   - Git identity configuration (name, email, GitHub username)
+#   - SSH key management (import from Windows or archive)
+#   - Global Git configuration and .gitignore
+#   - Repository cloning and initialization
+#   - Interactive prompt to continue to bootstrap
+#
+# Usage:
+#   ./bin/install [options]
+#
+# Options:
+#   --help            Show this help message
+#   --dry-run         Show commands without executing
+#   --force           Overwrite existing .env and SSH keys
+#   --debug           Enable shell execution tracing (set -x)
+#   --name=NAME       Set Git user.name
+#   --email=EMAIL     Set Git user.email
+#   --github=USER     Set GitHub username
+#   --win-user=USER   Set Windows username for SSH key import
+#   --keys-path=PATH  Provide SSH key archive manually
+#   --skip-prompt     Skip interactive continuation prompt (deprecated)
+#   --skip-identity   Skip identity setup, only install modules
+#   --skip-modules    Skip module installation, only setup identity
+#   --module=NAME     Install only specific module(s) (comma-separated)
+#   --skip=NAME       Skip specific module(s) (comma-separated)
+#   --list            List all available modules
+#   --graph           Show dependency graph
+#   --verbose         Enable verbose output
+#
+# Prerequisites:
+#   - git, ssh-agent, tar must be installed
+#   - Intended for WSL or Linux environments
+#
+# ==============================================================================
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# --- Ensure running in Bash ---
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "ERROR: This script requires Bash" >&2
+    exit 1
+fi
+
+# --- Source Module Base Library ---
+# Note: module-base.sh automatically sources common.sh, so we only need one source statement
+WIZ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export WIZ_ROOT
+
+# shellcheck source=lib/module-base.sh
+source "${WIZ_ROOT}/lib/module-base.sh"
+
+# --- Configuration Variables ---
+DRY_RUN=0
+FORCE=0
+DEBUG=0
+SKIP_PROMPT=1
+SKIP_IDENTITY=0
+SKIP_MODULES=0
+KEYS_PATH=""
+GIT_NAME=""
+GIT_EMAIL=""
+GITHUB_USERNAME=""
+WIN_USER=""
+
+# Module configuration
+MODULES_DIR="${WIZ_ROOT}/lib/modules"
+DISABLED_MODULES=()
+REQUESTED_MODULES=()
+DEFAULT_MODULES=(
+    essentials
+    zsh
+    starship
+    node
+    bun
+    neovim
+    summary
+)
+
+# Statistics
+MODULES_COMPLETED=0
+MODULES_FAILED=0
+MODULES_SKIPPED=0
+
+# --- Help Message ---
+show_help() {
+    cat <<'EOF'
+Wiz - Terminal Magic: Complete Installation & Setup
+
+Usage:
+  ./bin/install [options]
+
+Options:
+  --help              Show this help message
+  --dry-run           Show commands without executing
+  --force             Force reinstall of all modules
+  --debug             Enable shell execution tracing
+  
+  Identity Setup:
+  --name=NAME         Set Git user.name (skips prompt)
+  --email=EMAIL       Set Git user.email (skips prompt)
+  --github=USER       Set GitHub username (skips prompt)
+  --win-user=USER     Set Windows username for SSH key import
+  --keys-path=PATH    Provide SSH key archive manually
+  
+  Module Control:
+  --skip-identity     Skip identity setup, only install modules
+  --skip-modules      Skip module installation, only setup identity
+  --module=NAME       Install only specific module(s) (comma-separated)
+  --skip=NAME         Skip specific module(s) (comma-separated)
+  --list              List all available modules
+  --graph             Show dependency graph
+  --verbose           Enable verbose output
+
+Examples:
+  # Full installation (identity + modules)
+  ./bin/install
+
+  # Only install modules (skip identity setup)
+  ./bin/install --skip-identity
+
+  # Only setup identity (skip modules)
+  ./bin/install --skip-modules
+
+  # Install specific modules only
+  ./bin/install --skip-identity --module=node,neovim
+
+  # Non-interactive with all options
+  ./bin/install --name="John Doe" --email="john@example.com" --github="johndoe"
+
+  # Dry-run to see what would happen
+  ./bin/install --dry-run
+
+For more information: https://github.com/jwogrady/wiz
+
+EOF
+}
+
+# --- Parse Command-Line Arguments ---
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                export WIZ_DRY_RUN=1
+                ;;
+            --force)
+                FORCE=1
+                export WIZ_FORCE_REINSTALL=1
+                ;;
+            --debug)
+                DEBUG=1
+                ;;
+            --verbose)
+                export WIZ_VERBOSE=1
+                export WIZ_LOG_LEVEL=0
+                ;;
+            --skip-identity)
+                SKIP_IDENTITY=1
+                ;;
+            --skip-modules)
+                SKIP_MODULES=1
+                ;;
+            --skip-prompt)
+                SKIP_PROMPT=1
+                warn "--skip-prompt is deprecated, modules install automatically now"
+                ;;
+            --name=*)
+                GIT_NAME="${1#*=}"
+                ;;
+            --email=*)
+                GIT_EMAIL="${1#*=}"
+                ;;
+            --github=*)
+                GITHUB_USERNAME="${1#*=}"
+                ;;
+            --win-user=*)
+                WIN_USER="${1#*=}"
+                ;;
+            --keys-path=*)
+                KEYS_PATH="${1#*=}"
+                ;;
+            --module=*)
+                IFS=',' read -ra REQUESTED_MODULES <<< "${1#*=}"
+                ;;
+            --skip=*)
+                IFS=',' read -ra DISABLED_MODULES <<< "${1#*=}"
+                ;;
+            --list)
+                list_modules
+                exit 0
+                ;;
+            --graph)
+                show_dependency_graph
+                exit 0
+                ;;
+            *)
+                warn "Unknown option: $1 (use --help for usage)"
+                ;;
+        esac
+        shift
+    done
+    
+    # Enable debug mode if requested
+    if [[ $DEBUG -eq 1 ]]; then
+        set -x
+    fi
+    
+    return 0
+}
+
+# --- Requirements Check ---
+check_requirements() {
+    local missing=()
+    local required_commands=(git ssh-agent tar)
+    
+    for cmd in "${required_commands[@]}"; do
+        if ! command_exists "$cmd"; then
+            missing+=("$cmd")
+        fi
+    done
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        error "Missing required commands: ${missing[*]}"
+        error "Please install them and try again"
+        exit 1
+    fi
+}
+
+# --- Environment File Management ---
+
+# validate_env: Ensure .env file has valid lines
+validate_env() {
+    local envfile="$1"
+    
+    if ! grep -q '^GIT_NAME=' "$envfile" 2>/dev/null; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# write_env: Interactive environment setup
+write_env() {
+    local envfile="${WIZ_ROOT}/.env"
+    
+    # Load existing .env if present and not forcing
+    if [[ -f "$envfile" ]] && [[ $FORCE -eq 0 ]]; then
+        if validate_env "$envfile"; then
+            log "Loading existing configuration from .env"
+            # shellcheck source=/dev/null
+            source "$envfile"
+            return 0
+        else
+            warn "Existing .env appears invalid, recreating..."
+        fi
+    fi
+    
+    # Interactive prompts if values not provided via CLI
+    if [[ -z "$GIT_NAME" ]]; then
+        read -rp "Enter your full name (for Git commits): " GIT_NAME
+    fi
+    
+    if [[ -z "$GIT_EMAIL" ]]; then
+        read -rp "Enter your email (for Git commits): " GIT_EMAIL
+    fi
+    
+    if [[ -z "$GITHUB_USERNAME" ]]; then
+        read -rp "Enter your GitHub username: " GITHUB_USERNAME
+    fi
+    
+    if [[ -z "$WIN_USER" ]]; then
+        read -rp "Enter your Windows username (or leave blank): " WIN_USER
+    fi
+    
+    # Validate inputs
+    if [[ -z "$GIT_NAME" ]] || [[ -z "$GIT_EMAIL" ]] || [[ -z "$GITHUB_USERNAME" ]]; then
+        error "Name, email, and GitHub username are required"
+        exit 1
+    fi
+    
+    # Write .env file
+    log "Writing configuration to .env..."
+    
+    cat > "$envfile" <<EOF
+# Wiz Configuration
+# Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+GIT_NAME="$GIT_NAME"
+GIT_EMAIL="$GIT_EMAIL"
+GITHUB_USERNAME="$GITHUB_USERNAME"
+WIN_USER="$WIN_USER"
+EOF
+    
+    success "Configuration saved to .env"
+    
+    # Source the file we just created
+    # shellcheck source=/dev/null
+    source "$envfile"
+}
+
+# --- Git Configuration ---
+
+configure_git() {
+    log "Configuring Git..."
+    
+    # Set global Git identity
+    run "git config --global user.name '$GIT_NAME'"
+    run "git config --global user.email '$GIT_EMAIL'"
+    
+    # Set useful Git defaults
+    run "git config --global init.defaultBranch main"
+    run "git config --global pull.rebase false"
+    run "git config --global core.autocrlf input"
+    
+    # Create global .gitignore
+    local gitignore="${HOME}/.gitignore_global"
+    
+    if [[ ! -f "$gitignore" ]] || [[ $FORCE -eq 1 ]]; then
+        log "Creating global .gitignore..."
+        
+        cat > "$gitignore" <<'EOF'
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.python-version
+EOF
+        
+        run "git config --global core.excludesfile '$gitignore'"
+        success "Global .gitignore created"
+    else
+        debug "Global .gitignore already exists"
+    fi
+    
+    success "Git configured for: $GIT_NAME <$GIT_EMAIL>"
+}
+
+# --- SSH Key Management ---
+
+import_ssh_keys() {
+    local ssh_dir="${HOME}/.ssh"
+    
+    mkdir -p "$ssh_dir"
+    run "chmod 700 '$ssh_dir'"
+    
+    # Import from archive if provided
+    if [[ -n "$KEYS_PATH" ]] && [[ -f "$KEYS_PATH" ]]; then
+        log "Importing SSH keys from archive: $KEYS_PATH"
+        
+        if [[ $FORCE -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
+            run "tar -xzf '$KEYS_PATH' -C '$ssh_dir'"
+            run "chmod 600 '$ssh_dir'/id_*"
+            run "chmod 644 '$ssh_dir'/id_*.pub"
+            success "SSH keys imported from archive"
+        else
+            warn "SSH keys already exist (use --force to overwrite)"
+        fi
+        return 0
+    fi
+    
+    # Import from Windows user directory if available
+    if [[ -n "$WIN_USER" ]]; then
+        local win_ssh_dir="/mnt/c/Users/$WIN_USER/.ssh"
+        
+        if [[ -d "$win_ssh_dir" ]]; then
+            log "Importing SSH keys from Windows: $win_ssh_dir"
+            
+            for keyfile in "$win_ssh_dir"/id_*; do
+                [[ -f "$keyfile" ]] || continue
+                
+                local basename
+                basename="$(basename "$keyfile")"
+                local target="$ssh_dir/$basename"
+                
+                if [[ ! -f "$target" ]] || [[ $FORCE -eq 1 ]]; then
+                    run "cp '$keyfile' '$target'"
+                    
+                    if [[ "$basename" != *.pub ]]; then
+                        run "chmod 600 '$target'"
+                    else
+                        run "chmod 644 '$target'"
+                    fi
+                fi
+            done
+            
+            success "SSH keys imported from Windows"
+            return 0
+        else
+            warn "Windows SSH directory not found: $win_ssh_dir"
+        fi
+    fi
+    
+    # Generate new SSH key if none exists
+    if [[ ! -f "$ssh_dir/id_ed25519" ]]; then
+        warn "No SSH keys found. Generating new key..."
+        run "ssh-keygen -t ed25519 -C '$GIT_EMAIL' -f '$ssh_dir/id_ed25519' -N ''"
+        success "New SSH key generated"
+        
+        echo ""
+        log "Add this public key to GitHub:"
+        cat "$ssh_dir/id_ed25519.pub"
+        echo ""
+    else
+        debug "SSH keys already present"
+    fi
+}
+
+# configure_ssh_agent: Setup ssh-agent persistence
+configure_ssh_agent() {
+    log "Configuring ssh-agent..."
+    
+    local zshrc="${HOME}/.zshrc"
+    local bashrc="${HOME}/.bashrc"
+    
+    local ssh_agent_config='
+# --- Wiz SSH Agent Configuration ---
+if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
+    eval "$(ssh-agent -s)" >/dev/null
+    for key in ~/.ssh/id_*; do
+        [[ -f "$key" ]] && [[ "$key" != *.pub ]] && ssh-add "$key" 2>/dev/null
+    done
+fi
+# --- End Wiz SSH Agent Configuration ---
+'
+    
+    # Add to .bashrc
+    if [[ -f "$bashrc" ]]; then
+        append_to_file_once "$bashrc" "Wiz SSH Agent" "$ssh_agent_config"
+        debug "SSH agent config added to .bashrc"
+    fi
+    
+    # Add to .zshrc if it exists
+    if [[ -f "$zshrc" ]]; then
+        append_to_file_once "$zshrc" "Wiz SSH Agent" "$ssh_agent_config"
+        debug "SSH agent config added to .zshrc"
+    fi
+    
+    success "SSH agent configured"
+}
+
+# ==============================================================================
+# MODULE INSTALLATION FUNCTIONS
+# ==============================================================================
+
+# init_config: Initialize configuration and environment
+init_config() {
+    # Ensure log directory exists
+    mkdir -p "$LOG_DIR"
+    
+    # Ensure state directory exists
+    mkdir -p "$WIZ_STATE_DIR"
+    
+    # Load .env if it exists
+    if [[ -f "${WIZ_ROOT}/.env" ]]; then
+        # shellcheck source=/dev/null
+        source "${WIZ_ROOT}/.env"
+        debug "Loaded configuration from .env"
+    fi
+    
+    return 0
+}
+
+list_modules() {
+    echo "Available Modules:"
+    echo "=================="
+    echo ""
+    
+    for module_file in "${MODULES_DIR}"/install_*.sh; do
+        [[ -f "$module_file" ]] || continue
+        
+        local module_name
+        module_name="$(basename "$module_file" .sh)"
+        module_name="${module_name#install_}"
+        
+        (
+            # shellcheck source=/dev/null
+            source "$module_file"
+            
+            printf "  %-15s v%-8s %s\n" \
+                "$module_name" \
+                "${MODULE_VERSION:-unknown}" \
+                "${MODULE_DESCRIPTION:-No description}"
+        )
+    done
+    
+    echo ""
+}
+
+is_disabled() {
+    local module="$1"
+    
+    for disabled in "${DISABLED_MODULES[@]+"${DISABLED_MODULES[@]}"}"; do
+        [[ "$module" == "$disabled" ]] && return 0
+    done
+    
+    return 1
+}
+
+execute_module_wrapper() {
+    local module="$1"
+    local module_file="${MODULES_DIR}/install_${module}.sh"
+    
+    if [[ ! -f "$module_file" ]]; then
+        error "Module not found: $module"
+        return 1
+    fi
+    
+    if is_disabled "$module"; then
+        log "Module disabled: $module"
+        ((MODULES_SKIPPED++))
+        return 0
+    fi
+    
+    if is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+        log "Module already completed: $module (use --force to reinstall)"
+        ((MODULES_SKIPPED++))
+        return 0
+    fi
+    
+    log "Executing module: $module"
+    
+    if (
+        # shellcheck source=/dev/null
+        source "$module_file"
+        execute_module "$module"
+    ); then
+        ((MODULES_COMPLETED++))
+        return 0
+    else
+        ((MODULES_FAILED++))
+        error "Module failed: $module"
+        
+        if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
+            error "Stopping due to error (set WIZ_STOP_ON_ERROR=0 to continue)"
+            return 1
+        fi
+        
+        return 0
+    fi
+}
+
+show_statistics() {
+    local total=$((MODULES_COMPLETED + MODULES_FAILED + MODULES_SKIPPED))
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  INSTALLATION STATISTICS"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    printf "  Total modules:    %d\n" "$total"
+    printf "  ✓ Completed:      %d\n" "$MODULES_COMPLETED"
+    printf "  ⊘ Skipped:        %d\n" "$MODULES_SKIPPED"
+    printf "  ✖ Failed:         %d\n" "$MODULES_FAILED"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+run_module_installation() {
+    log "Wiz Module Installation v0.2.0"
+    echo ""
+    
+    init_config
+    mkdir -p "$WIZ_STATE_DIR"
+    
+    if [[ ${#REQUESTED_MODULES[@]} -eq 0 ]]; then
+        REQUESTED_MODULES=("${DEFAULT_MODULES[@]}")
+    fi
+    
+    # Display modules with proper formatting (IFS affects array joining)
+    local modules_display
+    local old_ifs="$IFS"
+    IFS=' '
+    modules_display="${REQUESTED_MODULES[*]}"
+    IFS="$old_ifs"
+    
+    log "Modules to install: ${modules_display}"
+    
+    if [[ ${#DISABLED_MODULES[@]} -gt 0 ]]; then
+        IFS=' '
+        local disabled_display="${DISABLED_MODULES[*]}"
+        IFS="$old_ifs"
+        log "Modules to skip: ${disabled_display}"
+    fi
+    echo ""
+    
+    if ! verify_dependencies; then
+        error "Dependency verification failed"
+        return 1
+    fi
+    
+    log "Resolving dependencies..."
+    
+    local ordered_modules
+    if ordered_modules=$(get_install_order "${REQUESTED_MODULES[@]}"); then
+        debug "Installation order: $ordered_modules"
+    else
+        error "Failed to resolve dependencies"
+        return 1
+    fi
+    
+    log "Starting module installation..."
+    echo ""
+    
+    # Convert space-separated string to array (temporarily restore default IFS)
+    local module_array
+    local old_ifs="$IFS"
+    IFS=' '
+    read -ra module_array <<< "$ordered_modules"
+    IFS="$old_ifs"
+    
+    local total=${#module_array[@]}
+    local current=0
+    
+    for module in "${module_array[@]}"; do
+        ((current++))
+        
+        progress_bar "$current" "$total" "[$current/$total] $module"
+        
+        if ! execute_module_wrapper "$module"; then
+            error "Module execution failed: $module"
+            
+            if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
+                return 1
+            fi
+        fi
+    done
+    
+    show_statistics
+    
+    if [[ $MODULES_FAILED -eq 0 ]]; then
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        success "  Module installation completed successfully!"
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        return 0
+    else
+        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        error "  Module installation completed with errors"
+        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        return 1
+    fi
+}
+
+# ==============================================================================
+# MAIN WORKFLOW
+# ==============================================================================
+
+main() {
+    # Parse arguments
+    parse_args "$@"
+    
+    # Enable debug mode if requested (must be after parse_args)
+    if [[ $DEBUG -eq 1 ]]; then
+        set -x
+    fi
+    
+    # Show banner
+    show_banner
+    
+    log "Starting Wiz installation..."
+    log "Log file: $LOG_FILE"
+    echo ""
+    
+    # PHASE 1: Identity Setup (unless skipped)
+    if [[ $SKIP_IDENTITY -eq 0 ]]; then
+        log "━━━ PHASE 1: Identity & SSH Setup ━━━"
+        echo ""
+        
+        # Check prerequisites
+        check_requirements
+        
+        # Interactive setup
+        write_env
+        echo ""
+        
+        # Configure Git
+        configure_git
+        echo ""
+        
+        # Setup SSH
+        import_ssh_keys
+        configure_ssh_agent
+        echo ""
+        
+        # Success message
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        success "  Identity setup complete!"
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        log "Git configured as: ${BOLD}$GIT_NAME <$GIT_EMAIL>${NC}"
+        log "GitHub username: ${BOLD}$GITHUB_USERNAME${NC}"
+        log "SSH keys: ${BOLD}$HOME/.ssh/${NC}"
+        echo ""
+    fi
+    
+    # PHASE 2: Module Installation (unless skipped)
+    if [[ $SKIP_MODULES -eq 0 ]]; then
+        if [[ $SKIP_IDENTITY -eq 0 ]]; then
+            log "━━━ PHASE 2: Development Tools Installation ━━━"
+            echo ""
+        fi
+        
+        if ! run_module_installation; then
+            error "Module installation failed"
+            exit 1
+        fi
+    fi
+    
+    # Final Success Message
+    echo ""
+    success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    success "  🌌 WIZ INSTALLATION COMPLETE! ✨"
+    success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    if [[ $SKIP_MODULES -eq 1 ]]; then
+        # Phase 1 complete - prompt for Phase 2
+        prompt_phase_2
+    else
+        # Full installation complete
+        log "Next steps:"
+        log "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
+        log "  2. Review configuration files in ~/.config/"
+        log "  3. Check installed tools: git, docker, nvim, node, etc."
+        echo ""
+    fi
+}
+
+# --- Phase 2 Prompt ---
+prompt_phase_2() {
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "  PHASE 1 COMPLETE: Identity & SSH Setup ✓"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    log "What was configured:"
+    log "  ✓ Git identity: ${BOLD}${GIT_NAME} <${GIT_EMAIL}>${NC}"
+    log "  ✓ GitHub username: ${BOLD}${GITHUB_USERNAME}${NC}"
+    log "  ✓ SSH keys configured"
+    log "  ✓ Global Git settings"
+    echo ""
+    
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "  PHASE 2: Development Tools Installation"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    log "Phase 2 will install:"
+    log "  • Essential system packages (~50+ tools)"
+    log "  • Zsh with Oh My Zsh framework"
+    log "  • Starship cross-shell prompt"
+    log "  • Node.js LTS via NVM"
+    log "  • Bun JavaScript runtime"
+    log "  • Neovim editor"
+    echo ""
+    
+    # Prompt for continuation
+    read -rp "$(echo -e "${BOLD}Continue with Phase 2 installation? [Y/n]:${NC} ")" response
+    echo ""
+    
+    case "${response,,}" in
+        n|no)
+            log "Phase 2 skipped. You can run it later with:"
+            log "  ${BOLD}cd ~/wiz && ./bin/install --skip-identity${NC}"
+            echo ""
+            ;;
+        *)
+            log "Starting Phase 2: Development Tools Installation..."
+            echo ""
+            
+            # Run Phase 2
+            if run_module_installation; then
+                echo ""
+                success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                success "  ALL PHASES COMPLETE! 🎉"
+                success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                log "Next steps:"
+                log "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
+                log "  2. Review configuration files in ~/.config/"
+                log "  3. Check installed tools: git, docker, nvim, node, etc."
+                echo ""
+            else
+                error "Phase 2 installation failed. Check logs for details."
+                log "Log file: ${LOG_FILE}"
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+# --- Execute Main ---
+main "$@"
