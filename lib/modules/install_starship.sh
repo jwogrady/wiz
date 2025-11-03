@@ -73,31 +73,35 @@ EOF
 # install_starship: Main installation logic
 install_starship() {
     # Check if starship is already installed
+    local already_installed=0
     if check_command_installed starship; then
-        module_skip "Already installed (use --force to reinstall)"
-        return 0
+        already_installed=1
+        log "Starship already installed, updating configuration..."
     fi
     
-    log "Installing Starship prompt..."
-    
-    # Install via official installer
-    progress "Downloading Starship installer..."
-    
-    curl_or_wget_pipe "https://starship.rs/install.sh" "-- --yes" "Failed to install Starship via official installer" || {
-        warn "Official installer failed, trying alternative methods..."
-        install_starship_fallback
-    }
-    
-    # Verify installation
-    if ! command_exists starship; then
-        module_fail "Starship installation failed"
+    # Install starship if not present
+    if [[ $already_installed -eq 0 ]]; then
+        log "Installing Starship prompt..."
+        
+        # Install via official installer
+        progress "Downloading Starship installer..."
+        
+        curl_or_wget_pipe "https://starship.rs/install.sh" "-- --yes" "Failed to install Starship via official installer" || {
+            warn "Official installer failed, trying alternative methods..."
+            install_starship_fallback
+        }
+        
+        # Verify installation
+        if ! command_exists starship; then
+            module_fail "Starship installation failed"
+        fi
+        
+        local version
+        version="$(get_command_version starship)"
+        success "Starship installed: v${version}"
     fi
     
-    local version
-    version="$(get_command_version starship)"
-    success "Starship installed: v${version}"
-    
-    # Configure prompt
+    # Always configure prompt (even if already installed)
     configure_starship_config
     configure_shell_integration
     
@@ -129,14 +133,15 @@ configure_starship_config() {
     # Backup existing config
     if [[ -f "$STARSHIP_CONFIG" ]]; then
         backup_file "$STARSHIP_CONFIG"
+        log "Existing config backed up"
     fi
     
     # Apply No Nerd Font preset
     if command_exists starship; then
         progress "Applying No Nerd Font preset..."
         
-        # Download preset directly
-        if run "starship preset no-nerd-font -o '$STARSHIP_CONFIG'"; then
+        # Download preset directly (force overwrite)
+        if starship preset no-nerd-font -o "$STARSHIP_CONFIG" </dev/null 2>/dev/null; then
             success "No Nerd Font preset applied"
         else
             warn "Failed to apply preset, creating manual configuration..."
