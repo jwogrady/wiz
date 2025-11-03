@@ -523,16 +523,68 @@ This project follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ### Version History
 
-- **v0.2.0** (2025-11-03) - Bug fixes and stability improvements
-  - Fixed 8 critical bugs preventing installer execution
-  - Improved error handling and command execution
-  - Enhanced module state management
-  - Better WSL compatibility
+- **v0.2.0** (2025-11-03) - Major Refactor and Stability Release
+  - **Architecture Overhaul**:
+    - Complete rewrite with modular architecture using `lib/module-base.sh`
+    - Separated concerns: `bin/bootstrap` for initial setup, `bin/install` for orchestration
+    - Introduced two-phase installation workflow (Identity → Tools)
+    - Added topological dependency resolution for modules
+    - Implemented state management system in `~/.wiz/state/`
+  
+  - **New Modules** (7 total, all self-contained):
+    - `essentials` - Core system packages (~50+ tools)
+    - `zsh` - Oh My Zsh with proper configuration
+    - `starship` - Cross-shell prompt with No Nerd Font preset
+    - `node` - Node.js LTS via NVM with shell integration
+    - `bun` - JavaScript runtime and package manager
+    - `neovim` - Editor with Lua configuration
+    - `summary` - Installation summary and next steps
+  
+  - **Enhanced Features**:
+    - Curl-pipeable bootstrap script for one-command setup
+    - Interactive Phase 2 prompt with verification
+    - Automatic shell reload after installation
+    - Progress bars and improved visual output
+    - Comprehensive logging to `logs/` directory
+    - Dry-run mode for testing without executing
+    - Module-specific skip/select options
+    - Dependency graph visualization
+  
+  - **Critical Bug Fixes**:
+    - Fixed installer argument passing for starship and bun (bash pipe issues)
+    - Corrected README installation workflow (bootstrap vs install)
+    - Fixed starship verification hanging
+    - Removed interactive prompts from curl-piped bootstrap
+    - Improved phase completion messaging
+    - Enhanced error handling and recovery
+  
+  - **Code Quality**:
+    - Applied easybash coding style guide standards
+    - Consistent color variable naming (COLOR_ prefix)
+    - Proper array and heredoc formatting
+    - Readonly constants for configuration
+    - Comprehensive inline documentation
+    - Idempotent design - safe to run multiple times
+  
+  - **Breaking Changes from v0.1.0**:
+    - Removed old `install.sh` and `init/bootstrap.sh` structure
+    - Removed individual module scripts in `init/modules/`
+    - Removed deprecated tools (hostmaster-tools, openai-cli, shellcheck standalone)
+    - New directory structure: `bin/` and `lib/` instead of `init/`
+    - Different command-line interface (see `--help`)
+  
+  - **Migration from v0.1.0**:
+    - v0.2.0 is a fresh install - not an in-place upgrade
+    - Backup your existing `~/.wiz/` directory if upgrading
+    - New modules will respect existing configurations
+    - State management allows resuming failed installations
 
-- **v0.1.0** - Initial release
-  - Modular architecture
-  - Dependency resolution
-  - Basic modules (essentials, zsh, node, etc.)
+- **v0.1.0** (2025-10-XX) - Initial release
+  - Basic modular installer with `install.sh` entry point
+  - Individual module scripts in `init/modules/`
+  - Simple sequential installation
+  - Git identity and SSH key setup
+  - Docker, Node.js, Neovim, GitHub CLI installation
 
 ## 📄 License
 
