@@ -73,9 +73,22 @@ install_bun() {
     
     # Install via official installer
     progress "Downloading Bun installer..."
-    curl_or_wget_pipe "https://bun.sh/install" "--yes" "Failed to install Bun via official installer" || {
+    
+    # Download and run Bun installer (it's already non-interactive)
+    if command_exists curl; then
+        run "curl -fsSL https://bun.sh/install | bash" || {
+            error "Bun installation via curl failed"
+            module_fail "Bun installation failed"
+        }
+    elif command_exists wget; then
+        run "wget -qO- https://bun.sh/install | bash" || {
+            error "Bun installation via wget failed"
+            module_fail "Bun installation failed"
+        }
+    else
+        error "Neither curl nor wget available"
         module_fail "Bun installation failed"
-    }
+    fi
     
     # Add Bun to PATH if installer added it to ~/.bun/bin
     add_to_path "$HOME/.bun/bin"

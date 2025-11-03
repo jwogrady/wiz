@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Wiz Module: Starship Prompt
+# Wiz - Terminal Magic Module: Starship Prompt
 # ==============================================================================
 # Installs and configures Starship cross-shell prompt with No Nerd Font preset.
 # Perfect for WSL environments where nerd fonts may not be available.
@@ -86,10 +86,29 @@ install_starship() {
         # Install via official installer
         progress "Downloading Starship installer..."
         
-        curl_or_wget_pipe "https://starship.rs/install.sh" "-- --yes" "Failed to install Starship via official installer" || {
-            warn "Official installer failed, trying alternative methods..."
+        # Download and run installer directly with proper arguments
+        if command_exists curl; then
+            run "curl -sS https://starship.rs/install.sh | sh -s -- --yes" || {
+                warn "curl installation failed, trying wget..."
+                if command_exists wget; then
+                    run "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
+                        warn "Official installer failed, trying alternative methods..."
+                        install_starship_fallback
+                    }
+                else
+                    warn "Official installer failed, trying alternative methods..."
+                    install_starship_fallback
+                fi
+            }
+        elif command_exists wget; then
+            run "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
+                warn "Official installer failed, trying alternative methods..."
+                install_starship_fallback
+            }
+        else
+            warn "Neither curl nor wget available, trying alternative methods..."
             install_starship_fallback
-        }
+        fi
         
         # Verify installation
         if ! command_exists starship; then
@@ -110,15 +129,63 @@ install_starship() {
 
 # install_starship_fallback: Alternative installation methods
 install_starship_fallback() {
-    if command_exists apt; then
-        warn "Trying apt installation..."
-        run "sudo apt-get update"
-        run "sudo apt-get install -y starship" || {
-            error "Apt installation also failed"
+    # Try downloading the binary directly as a more reliable fallback
+    log "Trying direct binary download..."
+    
+    local install_dir="${HOME}/.local/bin"
+    mkdir -p "$install_dir"
+    
+    # Detect architecture
+    local arch
+    arch="$(uname -m)"
+    local starship_arch
+    
+    case "$arch" in
+        x86_64)
+            starship_arch="x86_64-unknown-linux-gnu"
+            ;;
+        aarch64|arm64)
+            starship_arch="aarch64-unknown-linux-gnu"
+            ;;
+        *)
+            error "Unsupported architecture: $arch"
+            return 1
+            ;;
+    esac
+    
+    local download_url="https://github.com/starship/starship/releases/latest/download/starship-${starship_arch}.tar.gz"
+    local temp_file="/tmp/starship.tar.gz"
+    
+    log "Downloading starship binary for ${starship_arch}..."
+    
+    if command_exists curl; then
+        run "curl -fsSL -o '$temp_file' '$download_url'" || {
+            error "Failed to download starship binary"
+            return 1
+        }
+    elif command_exists wget; then
+        run "wget -q -O '$temp_file' '$download_url'" || {
+            error "Failed to download starship binary"
             return 1
         }
     else
-        error "No suitable installation method found"
+        error "Neither curl nor wget available"
+        return 1
+    fi
+    
+    log "Extracting starship binary..."
+    run "tar -xzf '$temp_file' -C '$install_dir'"
+    run "chmod +x '$install_dir/starship'"
+    run "rm -f '$temp_file'"
+    
+    # Add to PATH
+    add_to_path "$install_dir"
+    
+    if command_exists starship; then
+        success "Starship installed via direct binary download"
+        return 0
+    else
+        error "Starship installation failed"
         return 1
     fi
 }
