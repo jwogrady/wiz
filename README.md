@@ -94,7 +94,7 @@ Wiz uses a two-phase installation process for better control and verification:
 After installing WSL and dropping into Ubuntu shell:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/install | bash
+curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | bash
 ```
 
 **What Phase 1 does:**

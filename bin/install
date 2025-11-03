@@ -742,18 +742,18 @@ main() {
         fi
     fi
     
-    # Final Success Message
-    echo ""
-    success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    success "  🌌 WIZ INSTALLATION COMPLETE! ✨"
-    success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
+    # Final Success Message (only if both phases complete or modules skipped intentionally)
     if [[ $SKIP_MODULES -eq 1 ]]; then
         # Phase 1 complete - prompt for Phase 2
         prompt_phase_2
     else
         # Full installation complete
+        echo ""
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        success "  🌌 WIZ INSTALLATION COMPLETE! ✨"
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
         log "Next steps:"
         log "  1. Review configuration files in ~/.config/"
         log "  2. Check installed tools: git, docker, nvim, node, etc."
