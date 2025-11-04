@@ -1,8 +1,7 @@
-# Log files (but keep logs directory structure)
+# Log files
 *.log
-logs/*.log
+logs/
 *.log.*
-!logs/.gitkeep
 
 # Environment files
 .env
