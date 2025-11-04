@@ -25,7 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source module base
-# shellcheck source=../module-base.sh
+# shellcheck source=lib/module-base.sh
 source "${SCRIPT_DIR}/../module-base.sh"
 
 # Module metadata

@@ -31,17 +31,20 @@ readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
 readonly RED='\033[0;31m'
 readonly BLUE='\033[0;34m'
-readonly MAGENTA='\033[0;35m'
+# MAGENTA reserved for future use
+# readonly MAGENTA='\033[0;35m'
 readonly CYAN='\033[0;36m'
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
 readonly NC='\033[0m'
 
 # --- Configuration ---
+# shellcheck disable=SC2155
 readonly WIZ_ROOT="${WIZ_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 readonly LOG_DIR="${WIZ_ROOT}/logs"
 DRY_RUN="${WIZ_DRY_RUN:-0}"
 LOG_LEVEL="${WIZ_LOG_LEVEL:-1}"
+# shellcheck disable=SC2155
 LOG_FILE="${WIZ_LOG_FILE:-${LOG_DIR}/install_$(date +%F).log}"
 VERBOSE="${WIZ_VERBOSE:-0}"
 
