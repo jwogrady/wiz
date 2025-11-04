@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/jwogrady/wiz/compare/v0.3.0...v0.3.1) (2025-11-04)
+
+
+### Bug Fixes
+
+* resolve shellcheck warnings (SC2034, SC2155, SC1091) ([c99ab96](https://github.com/jwogrady/wiz/commit/c99ab962f6e6938ba4088c67d3f6f8d94b0e7fa5))
+
 ## [0.3.1] - 2025-11-04
 
 ### Security
