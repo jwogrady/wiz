@@ -1,0 +1,67 @@
+# Log files (but keep logs directory structure)
+*.log
+logs/*.log
+*.log.*
+!logs/.gitkeep
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# State and cache directories
+.wiz/state/
+.wiz/cache/
+.wiz/backups/
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# Test artifacts
+.wiz_test_state_*
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if any)
+__pycache__/
+*.py[cod]
+*.pyc
+venv/
+.python-version
+
+# Build artifacts
+dist/
+build/
+*.o
+*.a
+*.so
+
+# Temporary files
+tmp/
+temp/
+.tmp/

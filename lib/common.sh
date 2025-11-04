@@ -49,8 +49,16 @@ VERBOSE="${WIZ_VERBOSE:-0}"
 mkdir -p "$LOG_DIR"
 
 # --- Logging Functions ---
+# All logging functions write to both stdout/stderr (for user visibility) and
+# the log file (for troubleshooting). Log levels control verbosity:
+#   0 = DEBUG (detailed diagnostic information)
+#   1 = INFO  (normal operational messages)
+#   2 = WARN  (warning messages, non-fatal)
+#   3 = ERROR (error messages, may be fatal)
 
-# timestamp: Returns current ISO 8601 timestamp
+# timestamp: Returns current ISO 8601 timestamp in UTC
+# Usage: timestamp
+# Output: 2025-01-15T14:30:00Z
 timestamp() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
@@ -102,9 +110,15 @@ progress() {
 }
 
 # --- Command Execution ---
+# The run() function provides consistent command execution with:
+# - Dry-run mode support (shows commands without executing)
+# - Automatic logging of all commands and their results
+# - Verbose mode support for debugging
+# - Proper error handling and exit code propagation
 
-# run: Execute command with dry-run support
+# run: Execute command with dry-run support and logging
 # Usage: run "command to execute"
+# Returns: Exit code of the executed command (or 0 in dry-run mode)
 run() {
     local cmd="$*"
     
