@@ -1,0 +1,73 @@
+# 🌌 Cosmic Oasis — Polished Crescent Edition
+# Seamless gradient transitions with perfectly matched joins
+
+format = """
+[░▒▓](#c678dd)\
+[  ](bg:#c678dd fg:#0f0a1f)\
+[](fg:#c678dd bg:#3f2c7e)\
+$directory\
+[](fg:#3f2c7e bg:#2e215a)\
+$git_branch$git_status\
+[](fg:#2e215a bg:#1e153f)\
+$nodejs$bun$rust$golang$php\
+[](fg:#1e153f bg:#0f0a1f)\
+$time\
+[](fg:#0f0a1f)\
+\n$character"""
+
+# --- Directory ---
+[directory]
+style = "fg:#EFFFFF bg:#3f2c7e"
+format = "[ $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+
+# --- Git ---
+[git_branch]
+symbol = ""
+style = "fg:#C792EA bg:#2e215a"
+format = '[[ $symbol $branch ]($style)]($style)'
+
+[git_status]
+style = "fg:#7dcfff bg:#2e215a"
+format = '[[($all_status$ahead_behind )]($style)]($style)'
+
+# --- Languages ---
+[nodejs]
+symbol = ""
+style = "fg:#7dcfff bg:#1e153f"
+format = '[[ $symbol ($version) ]($style)]($style)'
+
+[bun]
+symbol = "🥟"
+style = "fg:#ff79c6 bg:#1e153f"
+format = '[[ $symbol ($version) ]($style)]($style)'
+version_format = "v${raw}"
+
+[rust]
+symbol = ""
+style = "fg:#ff6ac1 bg:#1e153f"
+format = '[[ $symbol ($version) ]($style)]($style)'
+
+[golang]
+symbol = ""
+style = "fg:#92ffb7 bg:#1e153f"
+format = '[[ $symbol ($version) ]($style)]($style)'
+
+[php]
+symbol = ""
+style = "fg:#b4aaff bg:#1e153f"
+format = '[[ $symbol ($version) ]($style)]($style)'
+
+# --- Time ---
+[time]
+disabled = false
+time_format = "%R"
+style = "fg:#ff6ac1 bg:#0f0a1f"
+format = "[ $time ]($style)"
+
+# --- Character ---
+[character]
+success_symbol = "[❯](bold #ff6ac1)"
+error_symbol   = "[❯](bold #ff5370)"
+vimcmd_symbol  = "[❮](bold #9ece6a)"

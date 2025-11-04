@@ -32,11 +32,16 @@
 │  PHASE 1: Identity & SSH Setup (Automated)                  │
 │  $ curl -fsSL https://...wiz/main/bin/bootstrap | bash      │
 │                                                              │
-│  ✓ Clone wiz repository to ~/wiz                            │
-│  ✓ Configure Git identity (name, email, GitHub)             │
-│  ✓ Set up SSH keys (import or generate)                     │
+│  Bootstrap (automatic):                                      │
+│  ✓ Auto-detect Windows username                              │
+│  ✓ Import SSH keys from C:\Users\{username}\keys.tar.gz     │
+│  ✓ Clone wiz repository to ~/wiz (SSH or HTTPS)              │
+│                                                              │
+│  Identity Setup (interactive):                               │
+│  ✓ Configure Git identity (name, email, GitHub)              │
+│  ✓ Verify SSH keys (skip if already imported)                │
 │  ✓ Configure Git global settings                            │
-│  ✓ Set up SSH agent                                         │
+│  ✓ Set up SSH agent for persistence                          │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
@@ -98,11 +103,12 @@ curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | b
 ```
 
 **What Phase 1 does:**
-1. ✅ Clones the Wiz repository to `~/wiz`
-2. ✅ Configures Git identity (name, email, GitHub username)
-3. ✅ Sets up SSH keys (import from Windows or create new)
-4. ✅ Configures global Git settings and `.gitignore`
-5. ✅ Sets up SSH agent for persistent authentication
+1. ✅ Auto-detects Windows username and imports SSH keys from `C:\Users\{username}\keys.tar.gz` (if available) for repository access
+2. ✅ Clones the Wiz repository to `~/wiz` (via SSH if keys available, otherwise HTTPS)
+3. ✅ Configures Git identity (name, email, GitHub username)
+4. ✅ Sets up SSH keys (auto-import from `C:\Users\{username}\keys.tar.gz`, Windows `.ssh`, or generate new)
+5. ✅ Configures global Git settings and `.gitignore`
+6. ✅ Sets up SSH agent for persistent authentication
 
 **After Phase 1 completes**, you'll see a summary and verification prompt.
 
@@ -225,7 +231,7 @@ Prompts for:
 - Git user name
 - Git email
 - GitHub username
-- Windows username (for SSH key import in WSL)
+- Windows username (for SSH key import fallback in WSL)
 
 ### Non-Interactive Setup
 
@@ -347,8 +353,8 @@ Identity Setup:
   --name=NAME         Set Git user.name (skips prompt)
   --email=EMAIL       Set Git user.email (skips prompt)
   --github=USER       Set GitHub username (skips prompt)
-  --win-user=USER     Set Windows username for SSH key import
-  --keys-path=PATH    Provide SSH key archive manually
+  --win-user=USER     Set Windows username for SSH key import (fallback)
+  --keys-path=PATH    Provide SSH key archive manually (overrides auto-detection)
   
 Module Control:
   --skip-identity     Skip identity setup, only install modules
@@ -394,10 +400,20 @@ Module Control:
 
 ### SSH Setup
 
-- Import keys from Windows (WSL)
-- Import from archive
-- Generate new ED25519 key
-- ssh-agent auto-start in shell
+SSH keys are automatically imported in the following priority order:
+
+1. **Explicit `--keys-path` argument** - Manual archive path (overrides all auto-detection)
+2. **`C:\Users\{WIN_USER}\keys.tar.gz/.ssh`** - Directory path (if archive exists as directory)
+3. **`C:\Users\{WIN_USER}\keys.tar.gz`** - Archive file (automatically detected based on Windows username, extracts `.ssh` directory)
+4. **Windows user `.ssh` directory** - `/mnt/c/Users/{WIN_USER}/.ssh` (fallback)
+5. **Generate new ED25519 key** - If no keys found
+
+**Note**: Windows username is automatically detected (via `whoami.exe`, `USERNAME` env var, or scanning `/mnt/c/Users/`). Keys will be imported from `C:\Users\{detected-username}\keys.tar.gz` if available.
+
+**SSH Agent Configuration:**
+- Automatically starts `ssh-agent` when entering WSL
+- Loads **all** private keys from `~/.ssh/` (including named keys like `id_vultr`, `id_jwogrady`, etc.)
+- Keys are loaded immediately during installation and on every shell start
 
 ## 🔍 Troubleshooting
 
@@ -430,8 +446,10 @@ tail -f ~/wiz/logs/install_$(date +%F).log
 
 **SSH keys not working**
 - Verify keys exist: `ls -la ~/.ssh/`
-- Check permissions: `chmod 600 ~/.ssh/id_*`
-- Test SSH agent: `ssh-add -l`
+- Check permissions: `chmod 600 ~/.ssh/id_*` (or for named keys: `chmod 600 ~/.ssh/id_vultr ~/.ssh/id_jwogrady`)
+- Test SSH agent: `ssh-add -l` (should show all loaded keys)
+- Verify archive exists: `ls -la /mnt/c/Users/john/keys.tar.gz`
+- Force re-import: `./bin/install --force --skip-modules`
 
 **Oh My Zsh installation hangs**
 - Kill the process and run with `--force`

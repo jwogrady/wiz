@@ -158,6 +158,93 @@ is_wsl() {
     grep -qi microsoft /proc/version 2>/dev/null
 }
 
+# detect_windows_user: Auto-detect Windows username for WSL environments
+detect_windows_user() {
+    # Try to get Windows username from whoami.exe if available
+    if command -v whoami.exe >/dev/null 2>&1; then
+        local win_user
+        win_user=$(whoami.exe 2>/dev/null | tr -d '\r\n' | sed 's/.*\\//')
+        [[ -n "$win_user" ]] && echo "$win_user" && return 0
+    fi
+    
+    # Try to get from USERNAME environment variable (common in WSL)
+    if [[ -n "${USERNAME:-}" ]]; then
+        echo "$USERNAME"
+        return 0
+    fi
+    
+    # Fallback: scan /mnt/c/Users/ for first non-system directory
+    if [[ -d /mnt/c/Users ]]; then
+        for user_dir in /mnt/c/Users/*; do
+            [[ -d "$user_dir" ]] || continue
+            local basename
+            basename="$(basename "$user_dir")"
+            # Skip system directories
+            [[ "$basename" == "Public" ]] && continue
+            [[ "$basename" == "Default" ]] && continue
+            [[ "$basename" == "Default User" ]] && continue
+            echo "$basename"
+            return 0
+        done
+    fi
+    
+    return 1
+}
+
+# extract_ssh_keys_from_archive: Extract SSH keys from tar.gz archive
+# Usage: extract_ssh_keys_from_archive <archive_path> <target_dir>
+extract_ssh_keys_from_archive() {
+    local archive="$1"
+    local target_dir="$2"
+    
+    [[ -f "$archive" ]] || return 1
+    
+    # Extract archive to temp directory
+    local temp_extract
+    temp_extract="$(mktemp -d)"
+    tar -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
+        rm -rf "$temp_extract"
+        return 1
+    }
+    
+    # Check if archive contains .ssh directory
+    if [[ -d "$temp_extract/.ssh" ]]; then
+        # Archive contains .ssh directory, copy all files from it
+        for keyfile in "$temp_extract/.ssh"/*; do
+            [[ -f "$keyfile" ]] || continue
+            local basename
+            basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
+            
+            # Set correct permissions
+            if [[ "$basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            else
+                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+            fi
+        done
+    else
+        # Archive contents are directly in root, copy all key files
+        for keyfile in "$temp_extract"/*; do
+            [[ -f "$keyfile" ]] || continue
+            local basename
+            basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
+            
+            # Set correct permissions
+            if [[ "$basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            else
+                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    # Clean up temp directory
+    rm -rf "$temp_extract"
+    return 0
+}
+
 # --- File Operations ---
 
 # atomic_write: Write content to file only if it differs (idempotent)
@@ -549,7 +636,7 @@ verify_file_or_dir() {
 export -f timestamp log warn error success debug progress
 export -f run atomic_write backup_file append_to_file_once
 export -f command_exists package_installed install_package install_packages
-export -f detect_os detect_shell is_wsl
+export -f detect_os detect_shell is_wsl detect_windows_user extract_ssh_keys_from_archive has_ssh_keys
 export -f progress_bar spinner show_banner prepare_code_repo
 export -f curl_or_wget_download curl_or_wget_pipe get_command_version
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
