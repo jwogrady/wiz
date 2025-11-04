@@ -1,6 +1,6 @@
 # 🌌 Wiz - Terminal Magic ✨
 
-![Version](https://img.shields.io/badge/version-0.2.0-blueviolet)
+![Version](https://img.shields.io/badge/version-0.3.1-blueviolet)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Shell](https://img.shields.io/badge/shell-bash%205.0%2B-green)
 ![Platform](https://img.shields.io/badge/platform-WSL%20%7C%20Linux-orange)
@@ -584,11 +584,18 @@ This project follows [Semantic Versioning 2.0.0](https://semver.org/) and uses a
 
 Releases are automatically created when commits are merged to master using [conventional commit messages](https://www.conventionalcommits.org/).
 
-**Current Version**: `0.2.0`
+**Current Version**: `0.3.1`
 
 For details on the release process, see [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Version History
+
+- **v0.3.1** (2025-11-04) - Patch Release: Cleanup, Stability, and Best Practices
+  - Removed committed install logs and enhanced .gitignore
+  - Improved logging policy (local-only logs, never committed)
+  - Minor performance optimizations (reduced redundant checks)
+  - Enhanced log truncation for dry-run and debug modes
+  - Improved idempotency and error handling
 
 - **v0.2.0** (2025-11-03) - Major Refactor and Stability Release
   - **Architecture Overhaul**:

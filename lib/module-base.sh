@@ -371,12 +371,7 @@ execute_module() {
     # Start module
     module_start
     
-    # Check if already complete
-    if is_module_complete "$module_name" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
-        module_skip "Already completed (use WIZ_FORCE_REINSTALL=1 to override)"
-        return 0
-    fi
-    
+    # Note: Completion check is already done in execute_module_wrapper() to avoid redundant checks
     # Run installation
     if "install_${module_name}"; then
         # Verify installation

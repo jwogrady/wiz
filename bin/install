@@ -816,7 +816,7 @@ show_statistics() {
 }
 
 run_module_installation() {
-    log "Wiz Module Installation v0.2.0"
+    log "Wiz Module Installation v0.3.1"
     echo ""
     
     init_config
@@ -990,17 +990,21 @@ main() {
         log "  2. Check installed tools: git, docker, nvim, node, etc."
         echo ""
         
-        # Automatically reload shell
-        log "${BOLD}✨ Reloading shell to apply all changes...${NC}"
-        echo ""
-        
-        # Exec into new shell (replaces current process)
-        if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
-            exec zsh
-        elif [[ -f "$HOME/.bashrc" ]]; then
-            exec bash
+        # Automatically reload shell (skip in dry-run mode)
+        if [[ $DRY_RUN -eq 0 ]]; then
+            log "${BOLD}✨ Reloading shell to apply all changes...${NC}"
+            echo ""
+            
+            # Exec into new shell (replaces current process)
+            if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
+                exec zsh
+            elif [[ -f "$HOME/.bashrc" ]]; then
+                exec bash
+            else
+                log "Please restart your terminal manually to apply changes."
+            fi
         else
-            log "Please restart your terminal manually to apply changes."
+            log "Dry-run mode: Skipping shell reload"
         fi
     fi
 }

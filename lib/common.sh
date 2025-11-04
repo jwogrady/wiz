@@ -49,25 +49,25 @@ VERBOSE="${WIZ_VERBOSE:-0}"
 mkdir -p "$LOG_DIR"
 
 # --- Logging Functions ---
-# All logging functions write to both stdout/stderr (for user visibility) and
-# the log file (for troubleshooting). Log levels control verbosity:
-#   0 = DEBUG (detailed diagnostic information)
-#   1 = INFO  (normal operational messages)
-#   2 = WARN  (warning messages, non-fatal)
-#   3 = ERROR (error messages, may be fatal)
 
-# timestamp: Returns current ISO 8601 timestamp in UTC
-# Usage: timestamp
-# Output: 2025-01-15T14:30:00Z
+# timestamp: Returns current ISO 8601 timestamp
 timestamp() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
 # _write_log: Internal function to write to log file
+# In dry-run mode, truncate verbose logs to reduce file size
 _write_log() {
     local level="$1"
     shift
-    echo "[$(timestamp)] [$level] $*" >> "$LOG_FILE"
+    local message="$*"
+    
+    # In dry-run mode, truncate very long messages to prevent log bloat
+    if [[ $DRY_RUN -eq 1 ]] && [[ ${#message} -gt 500 ]]; then
+        message="${message:0:500}... [truncated in dry-run]"
+    fi
+    
+    echo "[$(timestamp)] [$level] $message" >> "$LOG_FILE"
 }
 
 # debug: Debug-level log (dim cyan) - level 0
@@ -110,15 +110,9 @@ progress() {
 }
 
 # --- Command Execution ---
-# The run() function provides consistent command execution with:
-# - Dry-run mode support (shows commands without executing)
-# - Automatic logging of all commands and their results
-# - Verbose mode support for debugging
-# - Proper error handling and exit code propagation
 
-# run: Execute command with dry-run support and logging
+# run: Execute command with dry-run support
 # Usage: run "command to execute"
-# Returns: Exit code of the executed command (or 0 in dry-run mode)
 run() {
     local cmd="$*"
     
@@ -650,7 +644,7 @@ verify_file_or_dir() {
 export -f timestamp log warn error success debug progress
 export -f run atomic_write backup_file append_to_file_once
 export -f command_exists package_installed install_package install_packages
-export -f detect_os detect_shell is_wsl detect_windows_user extract_ssh_keys_from_archive has_ssh_keys
+export -f detect_os detect_shell is_wsl detect_windows_user extract_ssh_keys_from_archive
 export -f progress_bar spinner show_banner prepare_code_repo
 export -f curl_or_wget_download curl_or_wget_pipe get_command_version
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
