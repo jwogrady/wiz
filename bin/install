@@ -869,7 +869,8 @@ execute_module_wrapper() {
     local module_file="${MODULES_DIR}/install_${module}.sh"
     
     if [[ ! -f "$module_file" ]]; then
-        error "Module not found: $module"
+        error "Module not found: $module" \
+            "Available modules: $(ls -1 ${MODULES_DIR}/install_*.sh | sed 's|.*/install_||;s|\.sh$||' | tr '\n' ' ')"
         return 1
     fi
     
@@ -1036,16 +1037,21 @@ run_module_installation() {
     
     local total=${#module_array[@]}
     local current=0
+    local start_time
+    start_time=$(date +%s)
     
     for module in "${module_array[@]}"; do
         current=$((current + 1))
         
-        progress_bar "$current" "$total" "[$current/$total] $module"
+        progress_bar "$current" "$total" "[$current/$total] $module" "$start_time"
         
         if ! execute_module_wrapper "$module"; then
-            error "Module execution failed: $module"
+            error "Module execution failed: $module" \
+                "Try: ./bin/install --module=$module --verbose --debug"
             
             if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
+                error "Stopping installation due to error" \
+                    "Set WIZ_STOP_ON_ERROR=0 to continue on errors"
                 return 1
             fi
         fi
@@ -1163,17 +1169,23 @@ main() {
         log "  2. Check installed tools: git, docker, nvim, node, etc."
         echo ""
         
-        # Automatically reload shell
-        log "${BOLD}✨ Reloading shell to apply all changes...${NC}"
+        # Prompt before reloading shell (better UX)
+        echo ""
+        log "${BOLD}✨ Installation complete!${NC}"
+        log "To apply all changes, restart your terminal or run:"
+        log "  ${BOLD}exec zsh${NC}  (or ${BOLD}exec bash${NC})"
         echo ""
         
-        # Exec into new shell (replaces current process)
-        if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
-            exec zsh
-        elif [[ -f "$HOME/.bashrc" ]]; then
-            exec bash
+        # Only auto-reload if explicitly requested (via environment variable)
+        if [[ "${WIZ_AUTO_RELOAD_SHELL:-0}" == "1" ]]; then
+            log "Auto-reloading shell (WIZ_AUTO_RELOAD_SHELL=1)..."
+            if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
+                exec zsh
+            elif [[ -f "$HOME/.bashrc" ]]; then
+                exec bash
+            fi
         else
-            log "Please restart your terminal manually to apply changes."
+            log "Shell will not auto-reload. Restart manually to apply changes."
         fi
     fi
 }

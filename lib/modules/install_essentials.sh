@@ -146,36 +146,24 @@ install_essentials() {
         run "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold" || warn "System upgrade had issues, continuing..."
     fi
     
-    # Install package categories
-    log "Installing network utilities..."
-    install_packages "${NETWORK_UTILS[@]}"
+    # Collect all packages for batch installation (more efficient)
+    local all_packages=(
+        "${NETWORK_UTILS[@]}"
+        "${MONITORING_TOOLS[@]}"
+        "${BUILD_TOOLS[@]}"
+        "${DEV_ESSENTIALS[@]}"
+        "${SHELL_TOOLS[@]}"
+        "${DOCKER_TOOLS[@]}"
+        "${SECURITY[@]}"
+        "${EDITORS[@]}"
+        "${GITHUB_CLI[@]}"
+        "${SYSTEM[@]}"
+    )
     
-    log "Installing monitoring tools..."
-    install_packages "${MONITORING_TOOLS[@]}"
-    
-    log "Installing build tools..."
-    install_packages "${BUILD_TOOLS[@]}"
-    
-    log "Installing development essentials..."
-    install_packages "${DEV_ESSENTIALS[@]}"
-    
-    log "Installing shell tools..."
-    install_packages "${SHELL_TOOLS[@]}"
-    
-    log "Installing Docker tools..."
-    install_packages "${DOCKER_TOOLS[@]}"
-    
-    log "Installing security packages..."
-    install_packages "${SECURITY[@]}"
-    
-    log "Installing editors..."
-    install_packages "${EDITORS[@]}"
-    
-    log "Installing GitHub CLI..."
-    install_packages "${GITHUB_CLI[@]}"
-    
-    log "Installing system utilities..."
-    install_packages "${SYSTEM[@]}"
+    # Install all packages in one batch (more efficient than multiple calls)
+    log "Installing ${#all_packages[@]} packages across all categories..."
+    log "  Categories: network, monitoring, build, dev, shell, docker, security, editors, github-cli, system"
+    install_packages "${all_packages[@]}"
     
     # Clean up if configured
     if is_enabled "AUTO_CLEAN"; then

@@ -136,13 +136,23 @@ warn() {
 }
 
 # error: Error-level log (red) - level 3
+# Usage: error "message" ["troubleshooting_hint"]
 error() {
     # Ensure color variables are available (defensive)
     local red="${RED:-}"
     local nc="${NC:-}"
+    local bold="${BOLD:-}"
     [[ -z "$red" ]] && red='\033[0;31m'
     [[ -z "$nc" ]] && nc='\033[0m'
-    echo -e "${red}✖${nc} $*" >&2
+    [[ -z "$bold" ]] && bold='\033[1m'
+    
+    echo -e "${red}✖${nc} $1" >&2
+    
+    # Show troubleshooting hint if provided as second argument
+    if [[ -n "${2:-}" ]]; then
+        echo -e "${bold}  💡 Troubleshooting:${nc} $2" >&2
+    fi
+    
     # Only call _write_log if it's available (defensive for trap contexts)
     if declare -f _write_log >/dev/null 2>&1; then
         _write_log "ERROR" "$@"
@@ -224,7 +234,21 @@ run() {
         [[ $VERBOSE -eq 1 ]] && debug "Success: $cmd"
         return 0
     else
-        error "Command failed (exit $exit_code): $cmd"
+        local troubleshooting=""
+        # Provide helpful hints for common errors
+        if echo "$cmd" | grep -q "apt-get"; then
+            troubleshooting="Check: sudo apt-get update && sudo apt-get install -f"
+        elif echo "$cmd" | grep -q "git"; then
+            troubleshooting="Check: git config --global user.name and user.email are set"
+        elif echo "$cmd" | grep -q "ssh"; then
+            troubleshooting="Check: SSH keys are present in ~/.ssh/ and added to GitHub"
+        fi
+        
+        if [[ -n "$troubleshooting" ]]; then
+            error "Command failed (exit $exit_code): $cmd" "$troubleshooting"
+        else
+            error "Command failed (exit $exit_code): $cmd"
+        fi
         return $exit_code
     fi
 }
@@ -459,12 +483,13 @@ install_packages() {
 
 # --- Progress Indicators ---
 
-# progress_bar: Display a progress bar
-# Usage: progress_bar <current> <total> <description>
+# progress_bar: Display a progress bar with elapsed time and ETA
+# Usage: progress_bar <current> <total> <description> [start_time]
 progress_bar() {
     local current=$1
     local total=$2
     local desc="${3:-}"
+    local start_time="${4:-}"
     local percent=$((current * 100 / total))
     local filled=$((percent / 2))
     local empty=$((50 - filled))
@@ -475,10 +500,35 @@ progress_bar() {
     [[ -z "$blue" ]] && blue='\033[0;34m'
     [[ -z "$nc" ]] && nc='\033[0m'
     
-    printf "\r${blue}[%-50s]${nc} %3d%% %s" \
+    # Calculate elapsed time and ETA if start_time provided
+    local time_info=""
+    if [[ -n "$start_time" ]] && [[ "$start_time" != "0" ]] && [[ "$start_time" =~ ^[0-9]+$ ]]; then
+        local elapsed
+        elapsed=$(($(date +%s) - start_time))
+        local elapsed_str
+        elapsed_str=$(printf "%02d:%02d" $((elapsed / 60)) $((elapsed % 60)))
+        
+        # Estimate remaining time (simple linear estimation)
+        if [[ $current -gt 0 ]] && [[ $elapsed -gt 0 ]]; then
+            local avg_time_per_module
+            avg_time_per_module=$((elapsed / current))
+            local remaining_modules
+            remaining_modules=$((total - current))
+            local eta_seconds
+            eta_seconds=$((avg_time_per_module * remaining_modules))
+            local eta_str
+            eta_str=$(printf "%02d:%02d" $((eta_seconds / 60)) $((eta_seconds % 60)))
+            time_info=" [${elapsed_str} elapsed, ~${eta_str} remaining]"
+        else
+            time_info=" [${elapsed_str} elapsed]"
+        fi
+    fi
+    
+    printf "\r${blue}[%-50s]${nc} %3d%% %s%s" \
         "$(printf '#%.0s' $(seq 1 $filled))$(printf ' %.0s' $(seq 1 $empty))" \
         "$percent" \
-        "$desc"
+        "$desc" \
+        "$time_info"
     
     if [[ $current -eq $total ]]; then
         echo
