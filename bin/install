@@ -2,14 +2,15 @@
 # ==============================================================================
 # Wiz - Terminal Magic: Interactive Installer
 # ==============================================================================
-# Interactive setup for Git identity, SSH keys, and repository initialization.
+# Two-phase installation system:
+#   Phase 1: Development tools installation (essentials, zsh, starship, node, bun, neovim)
+#   Phase 2: Git identity configuration and SSH key management
 #
 # Features:
+#   - Modular development tool installation
 #   - Git identity configuration (name, email, GitHub username)
 #   - SSH key management (import from Windows or archive)
 #   - Global Git configuration and .gitignore
-#   - Repository cloning and initialization
-#   - Interactive prompt to continue to bootstrap
 #
 # Usage:
 #   ./bin/install [options]
@@ -102,16 +103,16 @@ Options:
   --force             Force reinstall of all modules
   --debug             Enable shell execution tracing
   
-  Identity Setup:
+  Module Control:
+  --skip-modules      Skip development tools installation (Phase 1)
+  --skip-identity     Skip identity setup (Phase 2), only install modules
+  
+  Identity Setup (Phase 2):
   --name=NAME         Set Git user.name (skips prompt)
   --email=EMAIL       Set Git user.email (skips prompt)
   --github=USER       Set GitHub username (skips prompt)
   --win-user=USER     Set Windows username for SSH key import
   --keys-path=PATH    Provide SSH key archive manually
-  
-  Module Control:
-  --skip-identity     Skip identity setup, only install modules
-  --skip-modules      Skip module installation, only setup identity
   --module=NAME       Install only specific module(s) (comma-separated)
   --skip=NAME         Skip specific module(s) (comma-separated)
   --list              List all available modules
@@ -119,13 +120,13 @@ Options:
   --verbose           Enable verbose output
 
 Examples:
-  # Full installation (identity + modules)
+  # Full installation (Phase 1: tools + Phase 2: identity)
   ./bin/install
 
-  # Only install modules (skip identity setup)
+  # Only install development tools (skip identity setup)
   ./bin/install --skip-identity
 
-  # Only setup identity (skip modules)
+  # Only setup identity (skip tool installation)
   ./bin/install --skip-modules
 
   # Install specific modules only
@@ -463,6 +464,7 @@ has_ssh_keys() {
 }
 
 # load_ssh_keys_to_agent: Load all SSH keys into the agent
+# Only prompts for passphrase if keys aren't already loaded
 load_ssh_keys_to_agent() {
     local ssh_dir="${HOME}/.ssh"
     [[ -d "$ssh_dir" ]] || return 0
@@ -484,6 +486,7 @@ load_ssh_keys_to_agent() {
     
     # Add all private keys to the agent (including named keys like id_vultr, id_jwogrady)
     local keys_loaded=0
+    local keys_skipped=0
     for key in "$ssh_dir"/*; do
         [[ -f "$key" ]] || continue
         [[ "$key" == *.pub ]] && continue
@@ -496,17 +499,34 @@ load_ssh_keys_to_agent() {
         
         if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
             debug "SSH key already loaded: $(basename "$key")"
+            keys_skipped=$((keys_skipped + 1))
             continue
         fi
         
         # Try to add key (will prompt for password if needed)
-        if ssh-add "$key" 2>/dev/null; then
-            keys_loaded=$((keys_loaded + 1))
+        # Redirect stdin from /dev/tty to allow passphrase entry if needed
+        if [[ -t 0 ]] && [[ -t 1 ]]; then
+            # Interactive terminal - allow passphrase prompt
+            if ssh-add "$key" 2>/dev/null; then
+                keys_loaded=$((keys_loaded + 1))
+            else
+                debug "Failed to add SSH key: $(basename "$key") (may require passphrase)"
+            fi
+        else
+            # Non-interactive - skip keys that need passphrase
+            if ssh-add "$key" 2>/dev/null; then
+                keys_loaded=$((keys_loaded + 1))
+            else
+                debug "Skipping SSH key that requires passphrase: $(basename "$key")"
+            fi
         fi
     done
     
     if [[ $keys_loaded -gt 0 ]]; then
         debug "Loaded $keys_loaded SSH key(s) into agent"
+    fi
+    if [[ $keys_skipped -gt 0 ]]; then
+        debug "Skipped $keys_skipped already-loaded SSH key(s)"
     fi
 }
 
@@ -682,31 +702,85 @@ configure_ssh_agent() {
     local zshrc="${HOME}/.zshrc"
     local bashrc="${HOME}/.bashrc"
     
+    # Improved SSH agent config that works for both bash and zsh
+    # Uses better key detection and avoids duplicate loading
     local ssh_agent_config='
 # --- Wiz SSH Agent Configuration ---
+# Start ssh-agent if not running
 if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
-    eval "$(ssh-agent -s)" >/dev/null
-    # Load all private keys (id_* and other named keys like id_vultr, id_jwogrady, etc.)
+    eval "$(ssh-agent -s)" >/dev/null 2>&1
+    export SSH_AUTH_SOCK SSH_AGENT_PID
+    
+    # Get list of already-loaded key fingerprints
+    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '"'"'{print $2}'"'"' || echo "")
+    
+    # Load all private keys that aren't already loaded
     for key in "${HOME}/.ssh/"*; do
-        [[ -f "$key" ]] && [[ "$key" != *.pub ]] && [[ "$key" != *known_hosts* ]] && ssh-add "$key" 2>/dev/null
+        [[ -f "$key" ]] || continue
+        [[ "$key" == *.pub ]] && continue
+        [[ "$key" == *known_hosts* ]] && continue
+        [[ "$key" == *config* ]] && continue
+        
+        # Check if key is already loaded by fingerprint
+        if command -v ssh-keygen >/dev/null 2>&1; then
+            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '"'"'{print $2}'"'"' || echo "")
+            if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
+                continue
+            fi
+        fi
+        
+        # Try to add key (will prompt for passphrase if needed)
+        ssh-add "$key" 2>/dev/null || true
     done
 fi
 # --- End Wiz SSH Agent Configuration ---
 '
     
-    # Add to .bashrc
+    # Add to .bashrc - ensure it's early in the file for proper initialization
     if [[ -f "$bashrc" ]]; then
-        append_to_file_once "$bashrc" "Wiz SSH Agent" "$ssh_agent_config"
+        # Remove any existing SSH agent config first
+        if grep -q "Wiz SSH Agent" "$bashrc" 2>/dev/null; then
+            sed -i '/# --- Wiz SSH Agent Configuration ---/,/# --- End Wiz SSH Agent Configuration ---/d' "$bashrc"
+        fi
+        # Prepend to file (SSH agent should load early)
+        { echo "$ssh_agent_config"; cat "$bashrc"; } > "$bashrc.tmp" && mv "$bashrc.tmp" "$bashrc"
         debug "SSH agent config added to .bashrc"
     fi
     
-    # Add to .zshrc if it exists
+    # Add to .zshrc if it exists - ensure it's early in the file
     if [[ -f "$zshrc" ]]; then
-        append_to_file_once "$zshrc" "Wiz SSH Agent" "$ssh_agent_config"
+        # Remove any existing SSH agent config first
+        if grep -q "Wiz SSH Agent" "$zshrc" 2>/dev/null; then
+            sed -i '/# --- Wiz SSH Agent Configuration ---/,/# --- End Wiz SSH Agent Configuration ---/d' "$zshrc"
+        fi
+        
+        # Insert early in file (after Oh My Zsh setup but before other tools)
+        # Check if Oh My Zsh is configured
+        if grep -q "^plugins=" "$zshrc" 2>/dev/null; then
+        # Insert after plugins line using a reliable method
+            local plugins_line
+            plugins_line=$(grep -n "^plugins=" "$zshrc" | head -1 | cut -d: -f1)
+            if [[ -n "$plugins_line" ]]; then
+                # Create temp file with SSH agent config, then insert using awk
+                echo "$ssh_agent_config" > /tmp/ssh_agent_insert.tmp
+                awk -v line="$plugins_line" '
+                    NR == line { print; while ((getline < "/tmp/ssh_agent_insert.tmp") > 0) print; close("/tmp/ssh_agent_insert.tmp"); next }
+                    { print }
+                ' "$zshrc" > "$zshrc.tmp" && mv "$zshrc.tmp" "$zshrc"
+                rm -f /tmp/ssh_agent_insert.tmp
+            else
+                # Prepend to file
+                { echo "$ssh_agent_config"; cat "$zshrc"; } > "$zshrc.tmp" && mv "$zshrc.tmp" "$zshrc"
+            fi
+        else
+            # Prepend to file if no Oh My Zsh found
+            { echo "$ssh_agent_config"; cat "$zshrc"; } > "$zshrc.tmp" && mv "$zshrc.tmp" "$zshrc"
+        fi
         debug "SSH agent config added to .zshrc"
     fi
     
     # Load SSH keys in current session if ssh-agent is available
+    # This will check if keys are already loaded and skip them
     load_ssh_keys_to_agent
     
     success "SSH agent configured"
@@ -724,8 +798,8 @@ init_config() {
     # Ensure state directory exists
     mkdir -p "$WIZ_STATE_DIR"
     
-    # Note: .env is loaded earlier in main() for Phase 1, so WIN_USER is available
-    # This function is for Phase 2 module installation initialization
+    # Note: .env is loaded in main() for Phase 2 (identity setup), but this function
+    # is for Phase 1 (module installation) initialization, so .env may not exist yet
     if [[ -f "${WIZ_ROOT}/.env" ]]; then
         # shellcheck source=/dev/null
         source "${WIZ_ROOT}/.env"
@@ -936,10 +1010,23 @@ main() {
     log "Log file: ${LOG_FILE:-logs/install_$(date +%F).log}"
     echo ""
     
-    # PHASE 1: Identity Setup (unless skipped)
-    if [[ $SKIP_IDENTITY -eq 0 ]]; then
-        log "━━━ PHASE 1: Identity & SSH Setup ━━━"
+    # PHASE 1: Development Tools Installation (unless skipped)
+    if [[ $SKIP_MODULES -eq 0 ]]; then
+        log "━━━ PHASE 1: Development Tools Installation ━━━"
         echo ""
+        
+        if ! run_module_installation; then
+            error "Module installation failed"
+            exit 1
+        fi
+    fi
+    
+    # PHASE 2: Identity & SSH Setup (unless skipped)
+    if [[ $SKIP_IDENTITY -eq 0 ]]; then
+        if [[ $SKIP_MODULES -eq 0 ]]; then
+            log "━━━ PHASE 2: Identity & SSH Setup ━━━"
+            echo ""
+        fi
         
         # Check prerequisites
         check_requirements
@@ -976,23 +1063,17 @@ main() {
         echo ""
     fi
     
-    # PHASE 2: Module Installation (unless skipped)
-    if [[ $SKIP_MODULES -eq 0 ]]; then
-        if [[ $SKIP_IDENTITY -eq 0 ]]; then
-            log "━━━ PHASE 2: Development Tools Installation ━━━"
-            echo ""
-        fi
-        
-        if ! run_module_installation; then
-            error "Module installation failed"
-            exit 1
-        fi
-    fi
-    
-    # Final Success Message (only if both phases complete or modules skipped intentionally)
-    if [[ $SKIP_MODULES -eq 1 ]]; then
-        # Phase 1 complete - prompt for Phase 2
-        prompt_phase_2
+    # Final Success Message
+    if [[ $SKIP_IDENTITY -eq 1 ]]; then
+        # Phase 1 complete - show message (no prompt, user can run Phase 2 manually)
+        echo ""
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        success "  PHASE 1 COMPLETE: Development Tools Installation ✓"
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        log "To configure Git identity and SSH keys later, run:"
+        log "  ${BOLD}cd ~/wiz && ./bin/install --skip-modules${NC}"
+        echo ""
     else
         # Full installation complete
         echo ""
@@ -1019,70 +1100,6 @@ main() {
             log "Please restart your terminal manually to apply changes."
         fi
     fi
-}
-
-# --- Phase 2 Prompt ---
-prompt_phase_2() {
-    echo ""
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "  PHASE 1 COMPLETE: Identity & SSH Setup ✓"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
-    log "What was configured:"
-    log "  ✓ Git identity: ${BOLD}${GIT_NAME} <${GIT_EMAIL}>${NC}"
-    log "  ✓ GitHub username: ${BOLD}${GITHUB_USERNAME}${NC}"
-    log "  ✓ SSH keys configured"
-    log "  ✓ Global Git settings"
-    echo ""
-    
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "  PHASE 2: Development Tools Installation"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
-    log "Phase 2 will install:"
-    log "  • Essential system packages (~50+ tools)"
-    log "  • Zsh with Oh My Zsh framework"
-    log "  • Starship cross-shell prompt"
-    log "  • Node.js LTS via NVM"
-    log "  • Bun JavaScript runtime"
-    log "  • Neovim editor"
-    echo ""
-    
-    # Prompt for continuation
-    read -rp "$(echo -e "${BOLD}Continue with Phase 2 installation? [Y/n]:${NC} ")" response
-    echo ""
-    
-    case "${response,,}" in
-        "n"|"no")
-            log "Phase 2 skipped. You can run it later with:"
-            log "  ${BOLD}cd ~/wiz && ./bin/install --skip-identity${NC}"
-            echo ""
-        ;;
-        *)
-            log "Starting Phase 2: Development Tools Installation..."
-            echo ""
-            
-            # Run Phase 2
-            if run_module_installation; then
-                echo ""
-                success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                success "  ALL PHASES COMPLETE! 🎉"
-                success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo ""
-                log "Next steps:"
-                log "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
-                log "  2. Review configuration files in ~/.config/"
-                log "  3. Check installed tools: git, docker, nvim, node, etc."
-                echo ""
-            else
-                error "Phase 2 installation failed. Check logs for details."
-                log "Log file: ${LOG_FILE}"
-                echo ""
-            fi
-        ;;
-    esac
 }
 
 # --- Execute Main ---

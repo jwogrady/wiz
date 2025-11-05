@@ -12,19 +12,19 @@ Wiz is a comprehensive, modular installation system for setting up a complete de
 
 ### 🎯 **Two-Phase Installation**
 
-**Phase 1: Identity & SSH Setup**
-- Interactive Git identity configuration (name, email, GitHub username)
-- SSH key import from Windows or archive files
-- SSH agent configuration and key management
-- Global Git configuration and `.gitignore` setup
-
-**Phase 2: Development Tools**
+**Phase 1: Development Tools**
 - Essential system packages (~50+ tools)
 - Zsh shell with Oh My Zsh framework
 - Starship cross-shell prompt with custom theme
 - Node.js LTS via NVM
 - Bun JavaScript runtime
 - Neovim editor
+
+**Phase 2: Identity & SSH Setup**
+- Interactive Git identity configuration (name, email, GitHub username)
+- SSH key import from Windows or archive files
+- SSH agent configuration and key management
+- Global Git configuration and `.gitignore` setup
 
 ### 🏗️ **Modular Architecture**
 
@@ -54,8 +54,8 @@ curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | b
 
 This will:
 1. Clone the repository to `~/wiz`
-2. Run Phase 1 (Identity & SSH setup)
-3. Run Phase 2 (Development tools installation)
+2. Run Phase 1 (Development tools installation)
+3. Run Phase 2 (Identity & SSH setup)
 
 ### Manual Installation
 
@@ -87,10 +87,10 @@ cd ~/wiz
 # Dry-run (preview changes)
 ./bin/install --dry-run
 
-# Skip identity setup, only install modules
+# Skip identity setup, only install development tools
 ./bin/install --skip-identity
 
-# Skip modules, only setup identity
+# Skip development tools, only setup identity
 ./bin/install --skip-modules
 ```
 
@@ -328,7 +328,7 @@ This checks:
 
 ### Environment File
 
-After Phase 1, configuration is saved to `.env`:
+After Phase 2, configuration is saved to `.env`:
 
 ```bash
 # Wiz Configuration
