@@ -1,0 +1,21 @@
+# ShellCheck Configuration for Status26 Bash Style Guide
+# See: docs/STATUS26_BASH_STYLE_GUIDE_v1.md
+
+# Enable all checks by default
+enable=all
+
+# Disable specific checks that are acceptable in our context
+# SC1090: Can't follow non-constant source (we use dynamic sourcing with validation)
+# SC1091: Not following sourced file (expected for modular architecture)
+disable=SC1090,SC1091
+
+# Shell dialect
+shell=bash
+
+# Exclude common false positives
+# SC2034: Variable appears unused (may be used in sourced files)
+# SC2154: Variable referenced but not assigned (may be set in sourced files)
+exclude=SC2034,SC2154
+
+# Source path prefixes (for better error reporting)
+source-path=lib:bin:scripts

@@ -1,0 +1,37 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# Types:
+#   feat:     New feature
+#   fix:      Bug fix
+#   docs:     Documentation changes
+#   style:    Code style (formatting, whitespace)
+#   refactor: Code refactoring
+#   perf:     Performance improvements
+#   test:     Adding or updating tests
+#   build:    Build system or external dependencies
+#   ci:       CI/CD changes
+#   chore:    Maintenance tasks
+#   revert:   Reverting a previous commit
+#
+# Examples:
+#   feat(starship): add SHA256 verification for installer
+#
+#   Adds SHA256 checksum verification before executing
+#   the Starship installer script for improved security.
+#
+#   Closes #123
+#
+#   fix(install): correct SSH key import path validation
+#
+#   The path validation was incorrectly rejecting valid
+#   Windows paths. Updated regex to properly handle WSL
+#   mount points.
+#
+#   Fixes #456
+#
+# See docs/STATUS26_BASH_STYLE_GUIDE_v1.md for full guidelines
+# See docs/RELEASE.md for versioning rules

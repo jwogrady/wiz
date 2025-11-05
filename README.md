@@ -457,6 +457,8 @@ get_command_version "cmd"  # Returns: version string
 - **[SSH Keys Guide](docs/SSH_KEYS.md)** - SSH key management details
 - **[Release Process](docs/RELEASE.md)** - How releases work
 - **[Code Review](docs/CODE_REVIEW.md)** - Code quality guidelines
+- **[Bash Style Guide](docs/STATUS26_BASH_STYLE_GUIDE_v1.md)** - Status26 Bash coding standards
+- **[Conventional Commits Setup](docs/CONVENTIONAL_COMMITS_SETUP.md)** - Git hooks and commit message validation
 
 ---
 
@@ -492,10 +494,13 @@ get_command_version "cmd"  # Returns: version string
 
 Contributions are welcome! Please:
 
-1. Follow the existing code style
-2. Add tests for new features
-3. Update documentation
-4. Use conventional commits (see [RELEASE.md](docs/RELEASE.md))
+1. Follow the [Bash Style Guide](docs/STATUS26_BASH_STYLE_GUIDE_v1.md)
+2. Run `./scripts/check_bash_style.sh` before submitting PRs
+3. Ensure all scripts pass ShellCheck (see `.shellcheckrc`)
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) format (validated by commitlint)
+5. Add tests for new features
+6. Update documentation
+7. See [RELEASE.md](docs/RELEASE.md) for versioning and release process
 
 ### Commit Format
 
