@@ -499,8 +499,14 @@ load_ssh_keys_to_agent() {
         [[ "$key" == *config* ]] && continue
         
         # Check if key is already loaded by comparing fingerprints
+        # Use cached fingerprint for better performance
         local key_fingerprint
-        key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+        if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
+            key_fingerprint=$(get_cached_ssh_fingerprint "$key")
+        else
+            # Fallback to direct call if caching function not available
+            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+        fi
         
         if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
             debug "SSH key already loaded: $(basename "$key")"
@@ -728,8 +734,14 @@ if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
         [[ "$key" == *config* ]] && continue
         
         # Check if key is already loaded by fingerprint
+        # Use cached fingerprint for better performance
         if command -v ssh-keygen >/dev/null 2>&1; then
-            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+            if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
+                key_fingerprint=$(get_cached_ssh_fingerprint "$key")
+            else
+                # Fallback to direct call if caching function not available
+                key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+            fi
             if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
                 continue
             fi
@@ -895,6 +907,60 @@ execute_module_wrapper() {
     fi
 }
 
+# show_installation_summary: Display what will be installed before starting
+show_installation_summary() {
+    local ordered_modules="$1"
+    local modules_to_install=()
+    local modules_to_skip=()
+    
+    # Convert space-separated string to array
+    local module_array
+    local old_ifs="$IFS"
+    IFS=' '
+    read -ra module_array <<< "$ordered_modules"
+    IFS="$old_ifs"
+    
+    # Categorize modules
+    for module in "${module_array[@]}"; do
+        if is_disabled "$module"; then
+            continue  # Skip disabled modules
+        elif is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+            modules_to_skip+=("$module")
+        else
+            modules_to_install+=("$module")
+        fi
+    done
+    
+    # Display summary
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  INSTALLATION PLAN"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    if [[ ${#modules_to_install[@]} -gt 0 ]]; then
+        IFS=' '
+        local install_display="${modules_to_install[*]}"
+        IFS="$old_ifs"
+        printf "  📦 Will install:   %s\n" "$install_display"
+        printf "  Total modules:    %d\n" "${#modules_to_install[@]}"
+    else
+        printf "  📦 Will install:   (none - all modules completed)\n"
+    fi
+    
+    if [[ ${#modules_to_skip[@]} -gt 0 ]]; then
+        IFS=' '
+        local skip_display="${modules_to_skip[*]}"
+        IFS="$old_ifs"
+        printf "  ⊘ Will skip:       %s\n" "$skip_display"
+        printf "  Skipped count:    %d\n" "${#modules_to_skip[@]}"
+    fi
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
 show_statistics() {
     local total=$((MODULES_COMPLETED + MODULES_FAILED + MODULES_SKIPPED))
     
@@ -954,6 +1020,9 @@ run_module_installation() {
         error "Failed to resolve dependencies"
         return 1
     fi
+    
+    # Show installation summary before starting
+    show_installation_summary "$ordered_modules"
     
     log "Starting module installation..."
     echo ""
