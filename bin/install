@@ -499,8 +499,14 @@ load_ssh_keys_to_agent() {
         [[ "$key" == *config* ]] && continue
         
         # Check if key is already loaded by comparing fingerprints
+        # Use cached fingerprint for better performance
         local key_fingerprint
-        key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+        if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
+            key_fingerprint=$(get_cached_ssh_fingerprint "$key")
+        else
+            # Fallback to direct call if caching function not available
+            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+        fi
         
         if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
             debug "SSH key already loaded: $(basename "$key")"
@@ -728,8 +734,14 @@ if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
         [[ "$key" == *config* ]] && continue
         
         # Check if key is already loaded by fingerprint
+        # Use cached fingerprint for better performance
         if command -v ssh-keygen >/dev/null 2>&1; then
-            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+            if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
+                key_fingerprint=$(get_cached_ssh_fingerprint "$key")
+            else
+                # Fallback to direct call if caching function not available
+                key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+            fi
             if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
                 continue
             fi
