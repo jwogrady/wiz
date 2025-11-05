@@ -4,7 +4,7 @@
 
 Wiz is a comprehensive, modular installation system for setting up a complete development environment on Linux and WSL. It handles everything from Git identity configuration and SSH key management to installing essential development tools, shell configurations, and runtime environments.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/jwogrady/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/jwogrady/wiz/releases)
 
 ---
 
