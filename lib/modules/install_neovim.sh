@@ -72,9 +72,9 @@ install_neovim() {
     log "Installing Neovim..."
     
     # Try apt installation first (fastest)
+    # Note: apt-get update is handled by essentials module, so we skip it here
     if command_exists apt; then
         progress "Installing via apt..."
-        run "sudo apt-get update -y" || warn "apt-get update had issues"
         run "sudo apt-get install -y neovim" && {
             success "Neovim installed via apt"
             configure_neovim
