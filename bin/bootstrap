@@ -3,8 +3,8 @@
 # Wiz - Terminal Magic: Bootstrap Script
 # ==============================================================================
 # This script is designed to be curl-piped from GitHub for initial setup.
-# It clones the repo and runs both Phase 1 (identity & SSH setup) and
-# Phase 2 (module installation) automatically.
+# It clones the repo and runs both Phase 1 (development tools installation) and
+# Phase 2 (identity & SSH setup) automatically.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | bash
@@ -26,7 +26,7 @@ show_bootstrap_banner() {
 ║                                                            ║
 ║   🌌  WIZ - TERMINAL MAGIC  ✨                            ║
 ║                                                            ║
-║   Complete Installation (Phase 1 + Phase 2)                ║
+║   Complete Installation (Phase 1: Tools + Phase 2: Identity) ║
 ║   https://github.com/jwogrady/wiz                          ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
@@ -51,7 +51,7 @@ check_requirements() {
 
 # --- Import SSH Keys Early (for git clone) ---
 # This is a minimal import - just extract keys and load into agent for git clone
-# Full import with all checks happens in install Phase 1
+# Full import with all checks happens in install Phase 2
 import_ssh_keys_bootstrap() {
     local win_user="$1"
     local ssh_dir="${HOME}/.ssh"
@@ -75,12 +75,27 @@ import_ssh_keys_bootstrap() {
             # Export SSH agent variables so they persist when calling install script
             export SSH_AUTH_SOCK SSH_AGENT_PID
             
+            # Get list of already-loaded keys (fingerprints) to avoid duplicate loading
+            local loaded_fingerprints
+            loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}' || echo "")
+            
             # Add all private keys to the agent
             local keys_loaded=0
             for key in "$ssh_dir"/*; do
                 [[ -f "$key" ]] || continue
                 [[ "$key" == *.pub ]] && continue
                 [[ "$key" == *known_hosts* ]] && continue
+                
+                # Check if key is already loaded by comparing fingerprints
+                local key_fingerprint
+                key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+                
+                if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
+                    debug "SSH key already loaded: $(basename "$key")"
+                    continue
+                fi
+                
+                # Try to add key (will prompt for passphrase if needed)
                 if ssh-add "$key" 2>/dev/null; then
                     keys_loaded=$((keys_loaded + 1))
                 fi
@@ -105,7 +120,7 @@ import_ssh_keys_bootstrap() {
 main() {
     show_bootstrap_banner
     
-    log "Starting Wiz bootstrap (Phase 1 + Phase 2)..."
+    log "Starting Wiz bootstrap (Phase 1: Tools + Phase 2: Identity)..."
     echo ""
     
     # Check requirements
@@ -168,10 +183,10 @@ main() {
     # Make install script executable
     chmod +x bin/install
     
-    # Run both Phase 1 (identity setup) and Phase 2 (modules) automatically
+    # Run both Phase 1 (development tools) and Phase 2 (identity setup) automatically
     echo ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "Starting Phase 1: Identity & SSH Setup"
+    log "Starting Phase 1: Development Tools Installation"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     

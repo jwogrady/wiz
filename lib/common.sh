@@ -210,11 +210,17 @@ run() {
         _write_log "EXEC" "$cmd"
     fi
     
-    if eval "$cmd"; then
+    # Execute command, filtering out harmless systemd service warnings
+    # These warnings occur when apt tries to manage services that aren't loaded yet
+    local exit_code=0
+    local output
+    output=$(eval "$cmd" 2>&1; exit_code=$?)
+    echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+    
+    if [[ $exit_code -eq 0 ]]; then
         [[ $VERBOSE -eq 1 ]] && debug "Success: $cmd"
         return 0
     else
-        local exit_code=$?
         error "Command failed (exit $exit_code): $cmd"
         return $exit_code
     fi

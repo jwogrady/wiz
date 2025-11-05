@@ -22,9 +22,14 @@ set -euo pipefail
 # --- Module Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source module base
+# Source module base (which sources common.sh)
 # shellcheck source=../module-base.sh
 source "${SCRIPT_DIR}/../module-base.sh"
+
+# Ensure color variables are available (defensive fallback)
+# These should be set by common.sh, but provide fallbacks if not
+: "${BOLD:=\033[1m}"
+: "${NC:=\033[0m}"
 
 # Module metadata
 MODULE_NAME="summary"
