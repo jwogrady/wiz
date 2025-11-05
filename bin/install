@@ -22,7 +22,7 @@
 #   --name=NAME       Set Git user.name
 #   --email=EMAIL     Set Git user.email
 #   --github=USER     Set GitHub username
-#   --win-user=USER   Set Windows username for SSH key import
+#   --win-user=USER   Set Windows username for SSH key import (auto-detected if not provided)
 #   --keys-path=PATH  Provide SSH key archive manually
 #   --skip-prompt     Skip interactive continuation prompt (deprecated)
 #   --skip-identity   Skip identity setup, only install modules
@@ -90,7 +90,7 @@ MODULES_SKIPPED=0
 
 # --- Help Message ---
 show_help() {
-    cat <<'EOF'
+    cat << 'EOF'
 Wiz - Terminal Magic: Complete Installation & Setup
 
 Usage:
@@ -146,67 +146,67 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help|-h)
+            "--help"|"-h")
                 show_help
                 exit 0
-                ;;
-            --dry-run)
+            ;;
+            "--dry-run")
                 DRY_RUN=1
                 export WIZ_DRY_RUN=1
-                ;;
-            --force)
+            ;;
+            "--force")
                 FORCE=1
                 export WIZ_FORCE_REINSTALL=1
-                ;;
-            --debug)
+            ;;
+            "--debug")
                 DEBUG=1
-                ;;
-            --verbose)
+            ;;
+            "--verbose")
                 export WIZ_VERBOSE=1
                 export WIZ_LOG_LEVEL=0
-                ;;
-            --skip-identity)
+            ;;
+            "--skip-identity")
                 SKIP_IDENTITY=1
-                ;;
-            --skip-modules)
+            ;;
+            "--skip-modules")
                 SKIP_MODULES=1
-                ;;
-            --skip-prompt)
+            ;;
+            "--skip-prompt")
                 SKIP_PROMPT=1
                 warn "--skip-prompt is deprecated, modules install automatically now"
-                ;;
-            --name=*)
+            ;;
+            "--name="*)
                 GIT_NAME="${1#*=}"
-                ;;
-            --email=*)
+            ;;
+            "--email="*)
                 GIT_EMAIL="${1#*=}"
-                ;;
-            --github=*)
+            ;;
+            "--github="*)
                 GITHUB_USERNAME="${1#*=}"
-                ;;
-            --win-user=*)
+            ;;
+            "--win-user="*)
                 WIN_USER="${1#*=}"
-                ;;
-            --keys-path=*)
+            ;;
+            "--keys-path="*)
                 KEYS_PATH="${1#*=}"
-                ;;
-            --module=*)
+            ;;
+            "--module="*)
                 IFS=',' read -ra REQUESTED_MODULES <<< "${1#*=}"
-                ;;
-            --skip=*)
+            ;;
+            "--skip="*)
                 IFS=',' read -ra DISABLED_MODULES <<< "${1#*=}"
-                ;;
-            --list)
+            ;;
+            "--list")
                 list_modules
                 exit 0
-                ;;
-            --graph)
+            ;;
+            "--graph")
                 show_dependency_graph
                 exit 0
-                ;;
+            ;;
             *)
                 warn "Unknown option: $1 (use --help for usage)"
-                ;;
+            ;;
         esac
         shift
     done
@@ -250,6 +250,59 @@ validate_env() {
     return 0
 }
 
+# validate_git_name: Validate Git name format
+# Usage: validate_git_name <name>
+validate_git_name() {
+    local name="$1"
+    
+    # Name must not be empty or only whitespace
+    [[ -n "${name// }" ]] || return 1
+    
+    # Name should be at least 2 characters
+    [[ ${#name} -ge 2 ]] || return 1
+    
+    # Name should not contain only special characters
+    [[ "$name" =~ [[:alnum:]] ]] || return 1
+    
+    return 0
+}
+
+# validate_email: Validate email format
+# Usage: validate_email <email>
+validate_email() {
+    local email="$1"
+    
+    # Basic email format validation
+    # Must contain @ and at least one character before and after
+    [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || return 1
+    
+    return 0
+}
+
+# validate_github_username: Validate GitHub username format
+# Usage: validate_github_username <username>
+validate_github_username() {
+    local username="$1"
+    
+    # GitHub usernames can only contain alphanumeric characters and hyphens
+    # Cannot start or end with a hyphen
+    # Must be between 1 and 39 characters
+    # Cannot contain consecutive hyphens
+    [[ ${#username} -ge 1 ]] && [[ ${#username} -le 39 ]] || return 1
+    
+    # Single character: must be alphanumeric
+    if [[ ${#username} -eq 1 ]]; then
+        [[ "$username" =~ ^[a-zA-Z0-9]$ ]] || return 1
+    else
+        # Multiple characters: start and end with alphanumeric, middle can have hyphens
+        [[ "$username" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$ ]] || return 1
+        # Check for consecutive hyphens
+        [[ ! "$username" =~ -- ]] || return 1
+    fi
+    
+    return 0
+}
+
 # write_env: Interactive environment setup
 write_env() {
     local envfile="${WIZ_ROOT}/.env"
@@ -279,8 +332,12 @@ write_env() {
         read -rp "Enter your GitHub username: " GITHUB_USERNAME
     fi
     
+    # Auto-detect Windows username if not provided (no prompt needed)
     if [[ -z "$WIN_USER" ]]; then
-        read -rp "Enter your Windows username (or leave blank): " WIN_USER
+        WIN_USER="$(detect_windows_user 2>/dev/null || echo "")"
+        if [[ -n "$WIN_USER" ]]; then
+            debug "Auto-detected Windows username: $WIN_USER"
+        fi
     fi
     
     # Validate inputs
@@ -289,10 +346,26 @@ write_env() {
         exit 1
     fi
     
+    # Validate format
+    if ! validate_git_name "$GIT_NAME"; then
+        error "Invalid name format. Please enter your full name."
+        exit 1
+    fi
+    
+    if ! validate_email "$GIT_EMAIL"; then
+        error "Invalid email format. Please enter a valid email address."
+        exit 1
+    fi
+    
+    if ! validate_github_username "$GITHUB_USERNAME"; then
+        error "Invalid GitHub username format. Username must contain only alphanumeric characters and hyphens."
+        exit 1
+    fi
+    
     # Write .env file
     log "Writing configuration to .env..."
     
-    cat > "$envfile" <<EOF
+    cat > "$envfile" << EOF
 # Wiz Configuration
 # Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
@@ -329,7 +402,7 @@ configure_git() {
     if [[ ! -f "$gitignore" ]] || [[ $FORCE -eq 1 ]]; then
         log "Creating global .gitignore..."
         
-        cat > "$gitignore" <<'EOF'
+        cat > "$gitignore" << 'EOF'
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -372,63 +445,185 @@ EOF
 
 # --- SSH Key Management ---
 
-import_ssh_keys() {
+# has_ssh_keys: Check if SSH keys exist (cached result)
+has_ssh_keys() {
+    local ssh_dir="${1:-${HOME}/.ssh}"
+    [[ -d "$ssh_dir" ]] || return 1
+    
+    # Quick check for any private key file
+    for key in "$ssh_dir"/*; do
+        [[ -f "$key" ]] || continue
+        [[ "$key" == *.pub ]] && continue
+        [[ "$key" == *known_hosts* ]] && continue
+        [[ "$key" == *config* ]] && continue
+        return 0
+    done
+    
+    return 1
+}
+
+# load_ssh_keys_to_agent: Load all SSH keys into the agent
+load_ssh_keys_to_agent() {
     local ssh_dir="${HOME}/.ssh"
+    [[ -d "$ssh_dir" ]] || return 0
     
-    mkdir -p "$ssh_dir"
-    run "chmod 700 '$ssh_dir'"
-    
-    # Import from archive if provided
-    if [[ -n "$KEYS_PATH" ]] && [[ -f "$KEYS_PATH" ]]; then
-        log "Importing SSH keys from archive: $KEYS_PATH"
-        
-        if [[ $FORCE -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
-            run "tar -xzf '$KEYS_PATH' -C '$ssh_dir'"
-            run "chmod 600 '$ssh_dir'/id_*"
-            run "chmod 644 '$ssh_dir'/id_*.pub"
-            success "SSH keys imported from archive"
-        else
-            warn "SSH keys already exist (use --force to overwrite)"
-        fi
+    if ! command_exists ssh-agent || ! command_exists ssh-add; then
         return 0
     fi
     
-    # Import from Windows user directory if available
-    if [[ -n "$WIN_USER" ]]; then
-        local win_ssh_dir="/mnt/c/Users/$WIN_USER/.ssh"
+    # Start agent if not running
+    if [[ -z "${SSH_AUTH_SOCK:-}" ]] || ! ssh-add -l >/dev/null 2>&1; then
+        eval "$(ssh-agent -s)" >/dev/null 2>&1 || return 0
+        # Export SSH agent variables so they persist in the current shell
+        export SSH_AUTH_SOCK SSH_AGENT_PID
+    fi
+    
+    # Get list of already-loaded keys (fingerprints)
+    local loaded_fingerprints
+    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}' || echo "")
+    
+    # Add all private keys to the agent (including named keys like id_vultr, id_jwogrady)
+    local keys_loaded=0
+    for key in "$ssh_dir"/*; do
+        [[ -f "$key" ]] || continue
+        [[ "$key" == *.pub ]] && continue
+        [[ "$key" == *known_hosts* ]] && continue
+        [[ "$key" == *config* ]] && continue
         
-        if [[ -d "$win_ssh_dir" ]]; then
-            log "Importing SSH keys from Windows: $win_ssh_dir"
-            
-            for keyfile in "$win_ssh_dir"/id_*; do
-                [[ -f "$keyfile" ]] || continue
-                
-                local basename
-                basename="$(basename "$keyfile")"
-                local target="$ssh_dir/$basename"
-                
-                if [[ ! -f "$target" ]] || [[ $FORCE -eq 1 ]]; then
-                    run "cp '$keyfile' '$target'"
-                    
-                    if [[ "$basename" != *.pub ]]; then
-                        run "chmod 600 '$target'"
-                    else
-                        run "chmod 644 '$target'"
-                    fi
-                fi
-            done
-            
-            success "SSH keys imported from Windows"
+        # Check if key is already loaded by comparing fingerprints
+        local key_fingerprint
+        key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
+        
+        if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
+            debug "SSH key already loaded: $(basename "$key")"
+            continue
+        fi
+        
+        # Try to add key (will prompt for password if needed)
+        if ssh-add "$key" 2>/dev/null; then
+            keys_loaded=$((keys_loaded + 1))
+        fi
+    done
+    
+    if [[ $keys_loaded -gt 0 ]]; then
+        debug "Loaded $keys_loaded SSH key(s) into agent"
+    fi
+}
+
+# ensure_ssh_directory: Ensure .ssh directory exists with correct permissions
+# Usage: ensure_ssh_directory <ssh_dir>
+ensure_ssh_directory() {
+    local ssh_dir="$1"
+    
+    if [[ ! -d "$ssh_dir" ]]; then
+        mkdir -p "$ssh_dir"
+        run "chmod 700 '$ssh_dir'"
+    else
+        # Verify permissions are correct (chmod is idempotent, but we log it)
+        run "chmod 700 '$ssh_dir'"
+    fi
+}
+
+# import_keys_from_archive: Import SSH keys from archive file
+# Usage: import_keys_from_archive <archive_path> <ssh_dir>
+import_keys_from_archive() {
+    local archive_path="$1"
+    local ssh_dir="$2"
+    
+    log "Importing SSH keys from archive: $archive_path"
+    
+    if [[ $FORCE -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
+        if extract_ssh_keys_from_archive "$archive_path" "$ssh_dir"; then
+            success "SSH keys imported from archive: $archive_path"
             return 0
         else
-            warn "Windows SSH directory not found: $win_ssh_dir"
+            error "Failed to extract SSH keys from archive: $archive_path"
+            error "Please verify the archive format and permissions"
+            return 1
+        fi
+    else
+        debug "SSH keys already exist, skipping import (use --force to overwrite)"
+        return 0
+    fi
+}
+
+# import_keys_from_directory: Import SSH keys from directory
+# Usage: import_keys_from_directory <source_dir> <ssh_dir> <description>
+import_keys_from_directory() {
+    local source_dir="$1"
+    local ssh_dir="$2"
+    local description="$3"
+    
+    log "Importing SSH keys from $description: $source_dir"
+    
+    local keys_imported=0
+    for keyfile in "$source_dir"/id_*; do
+        [[ -f "$keyfile" ]] || continue
+        
+        local basename
+        basename="$(basename "$keyfile")"
+        local target="$ssh_dir/$basename"
+        
+        if [[ ! -f "$target" ]] || [[ $FORCE -eq 1 ]]; then
+            if run "cp '$keyfile' '$target'"; then
+                # Set correct permissions based on file type
+                if [[ "$basename" != *.pub ]]; then
+                    run "chmod 600 '$target'"
+                    keys_imported=$((keys_imported + 1))
+                else
+                    run "chmod 644 '$target'"
+                fi
+            else
+                warn "Failed to copy key: $basename"
+            fi
+        fi
+    done
+    
+    if [[ $keys_imported -gt 0 ]]; then
+        success "SSH keys imported from $description"
+        return 0
+    else
+        debug "SSH keys already present, skipping import"
+        return 0
+    fi
+}
+
+# import_keys_from_windows_home: Import keys from Windows user home directory
+# Usage: import_keys_from_windows_home <win_user> <ssh_dir>
+import_keys_from_windows_home() {
+    local win_user="$1"
+    local ssh_dir="$2"
+    
+    # By convention, keys are in C:\Users\{WIN_USER}\keys.tar.gz
+    local keys_archive="/mnt/c/Users/${win_user}/keys.tar.gz"
+    
+    if [[ -f "$keys_archive" ]]; then
+        if import_keys_from_archive "$keys_archive" "$ssh_dir"; then
+            return 0
+        else
+            return 1
         fi
     fi
     
-    # Generate new SSH key if none exists
-    if [[ ! -f "$ssh_dir/id_ed25519" ]]; then
+    # Fallback: Check Windows .ssh directory
+    local win_ssh_dir="/mnt/c/Users/$win_user/.ssh"
+    if [[ -d "$win_ssh_dir" ]]; then
+        import_keys_from_directory "$win_ssh_dir" "$ssh_dir" "Windows"
+        return 0
+    fi
+    
+    return 1
+}
+
+# generate_new_ssh_key: Generate a new SSH key if none exists
+# Usage: generate_new_ssh_key <ssh_dir> <email>
+generate_new_ssh_key() {
+    local ssh_dir="$1"
+    local email="$2"
+    
+    if ! has_ssh_keys "$ssh_dir"; then
         warn "No SSH keys found. Generating new key..."
-        run "ssh-keygen -t ed25519 -C '$GIT_EMAIL' -f '$ssh_dir/id_ed25519' -N ''"
+        run "ssh-keygen -t ed25519 -C '$email' -f '$ssh_dir/id_ed25519' -N ''"
         success "New SSH key generated"
         
         echo ""
@@ -438,6 +633,46 @@ import_ssh_keys() {
     else
         debug "SSH keys already present"
     fi
+}
+
+import_ssh_keys() {
+    local ssh_dir="${HOME}/.ssh"
+    
+    # Ensure .ssh directory exists with correct permissions
+    ensure_ssh_directory "$ssh_dir"
+    
+    # Check if keys already exist (from bootstrap import)
+    if has_ssh_keys "$ssh_dir" && [[ $FORCE -eq 0 ]]; then
+        debug "SSH keys already present (from bootstrap), skipping import"
+        return 0
+    fi
+    
+    # Priority 1: Import from explicit KEYS_PATH if provided
+    if [[ -n "$KEYS_PATH" ]] && [[ -f "$KEYS_PATH" ]]; then
+        if import_keys_from_archive "$KEYS_PATH" "$ssh_dir"; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+    
+    # Priority 2: Import from Windows user home directory (by convention)
+    # Auto-detect Windows username if not provided
+    local win_user="${WIN_USER:-}"
+    
+    if [[ -z "$win_user" ]]; then
+        win_user="$(detect_windows_user 2>/dev/null || echo "")"
+    fi
+    
+    # Skip if we couldn't detect a username
+    if [[ -z "$win_user" ]]; then
+        debug "Windows username not detected, skipping Windows key import"
+    elif import_keys_from_windows_home "$win_user" "$ssh_dir"; then
+        return 0
+    fi
+    
+    # Generate new SSH key if none exists
+    generate_new_ssh_key "$ssh_dir" "$GIT_EMAIL"
 }
 
 # configure_ssh_agent: Setup ssh-agent persistence
@@ -451,8 +686,9 @@ configure_ssh_agent() {
 # --- Wiz SSH Agent Configuration ---
 if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
     eval "$(ssh-agent -s)" >/dev/null
-    for key in ~/.ssh/id_*; do
-        [[ -f "$key" ]] && [[ "$key" != *.pub ]] && ssh-add "$key" 2>/dev/null
+    # Load all private keys (id_* and other named keys like id_vultr, id_jwogrady, etc.)
+    for key in "${HOME}/.ssh/"*; do
+        [[ -f "$key" ]] && [[ "$key" != *.pub ]] && [[ "$key" != *known_hosts* ]] && ssh-add "$key" 2>/dev/null
     done
 fi
 # --- End Wiz SSH Agent Configuration ---
@@ -470,6 +706,9 @@ fi
         debug "SSH agent config added to .zshrc"
     fi
     
+    # Load SSH keys in current session if ssh-agent is available
+    load_ssh_keys_to_agent
+    
     success "SSH agent configured"
 }
 
@@ -485,7 +724,8 @@ init_config() {
     # Ensure state directory exists
     mkdir -p "$WIZ_STATE_DIR"
     
-    # Load .env if it exists
+    # Note: .env is loaded earlier in main() for Phase 1, so WIN_USER is available
+    # This function is for Phase 2 module installation initialization
     if [[ -f "${WIZ_ROOT}/.env" ]]; then
         # shellcheck source=/dev/null
         source "${WIZ_ROOT}/.env"
@@ -542,13 +782,13 @@ execute_module_wrapper() {
     
     if is_disabled "$module"; then
         log "Module disabled: $module"
-        ((MODULES_SKIPPED++))
+        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
         return 0
     fi
     
     if is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
         log "Module already completed: $module (use --force to reinstall)"
-        ((MODULES_SKIPPED++))
+        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
         return 0
     fi
     
@@ -559,10 +799,10 @@ execute_module_wrapper() {
         source "$module_file"
         execute_module "$module"
     ); then
-        ((MODULES_COMPLETED++))
+        MODULES_COMPLETED=$((MODULES_COMPLETED + 1))
         return 0
     else
-        ((MODULES_FAILED++))
+        MODULES_FAILED=$((MODULES_FAILED + 1))
         error "Module failed: $module"
         
         if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
@@ -648,7 +888,7 @@ run_module_installation() {
     local current=0
     
     for module in "${module_array[@]}"; do
-        ((current++))
+        current=$((current + 1))
         
         progress_bar "$current" "$total" "[$current/$total] $module"
         
@@ -693,7 +933,7 @@ main() {
     show_banner
     
     log "Starting Wiz installation..."
-    log "Log file: $LOG_FILE"
+    log "Log file: ${LOG_FILE:-logs/install_$(date +%F).log}"
     echo ""
     
     # PHASE 1: Identity Setup (unless skipped)
@@ -704,6 +944,13 @@ main() {
         # Check prerequisites
         check_requirements
         
+        # Load .env early if it exists (may contain WIN_USER from bootstrap)
+        if [[ -f "${WIZ_ROOT}/.env" ]]; then
+            # shellcheck source=/dev/null
+            source "${WIZ_ROOT}/.env"
+            debug "Loaded existing .env configuration"
+        fi
+        
         # Interactive setup
         write_env
         echo ""
@@ -712,7 +959,7 @@ main() {
         configure_git
         echo ""
         
-        # Setup SSH
+        # Setup SSH (import keys if needed, then configure agent)
         import_ssh_keys
         configure_ssh_agent
         echo ""
@@ -763,9 +1010,6 @@ main() {
         log "${BOLD}✨ Reloading shell to apply all changes...${NC}"
         echo ""
         
-        # Give user a moment to read the message
-        sleep 1
-        
         # Exec into new shell (replaces current process)
         if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
             exec zsh
@@ -811,11 +1055,11 @@ prompt_phase_2() {
     echo ""
     
     case "${response,,}" in
-        n|no)
+        "n"|"no")
             log "Phase 2 skipped. You can run it later with:"
             log "  ${BOLD}cd ~/wiz && ./bin/install --skip-identity${NC}"
             echo ""
-            ;;
+        ;;
         *)
             log "Starting Phase 2: Development Tools Installation..."
             echo ""
@@ -837,9 +1081,10 @@ prompt_phase_2() {
                 log "Log file: ${LOG_FILE}"
                 echo ""
             fi
-            ;;
+        ;;
     esac
 }
 
 # --- Execute Main ---
 main "$@"
+

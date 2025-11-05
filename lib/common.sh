@@ -27,15 +27,29 @@
 set -euo pipefail
 
 # --- Color Codes ---
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly RED='\033[0;31m'
-readonly BLUE='\033[0;34m'
-readonly MAGENTA='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly DIM='\033[2m'
-readonly NC='\033[0m'
+# Initialize color variables immediately to avoid unbound variable errors
+# Style guide: ANSI color codes should be uppercase with COLOR_ prefix
+COLOR_GREEN='\033[0;32m'
+COLOR_YELLOW='\033[1;33m'
+COLOR_RED='\033[0;31m'
+COLOR_BLUE='\033[0;34m'
+COLOR_MAGENTA='\033[0;35m'
+COLOR_CYAN='\033[0;36m'
+COLOR_BOLD='\033[1m'
+COLOR_DIM='\033[2m'
+COLOR_NC='\033[0m'
+readonly COLOR_GREEN COLOR_YELLOW COLOR_RED COLOR_BLUE COLOR_MAGENTA COLOR_CYAN COLOR_BOLD COLOR_DIM COLOR_NC
+
+# Backward compatibility aliases (preserve existing style)
+readonly GREEN="${COLOR_GREEN}"
+readonly YELLOW="${COLOR_YELLOW}"
+readonly RED="${COLOR_RED}"
+readonly BLUE="${COLOR_BLUE}"
+readonly MAGENTA="${COLOR_MAGENTA}"
+readonly CYAN="${COLOR_CYAN}"
+readonly BOLD="${COLOR_BOLD}"
+readonly DIM="${COLOR_DIM}"
+readonly NC="${COLOR_NC}"
 
 # --- Configuration ---
 readonly WIZ_ROOT="${WIZ_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -45,12 +59,23 @@ LOG_LEVEL="${WIZ_LOG_LEVEL:-1}"
 LOG_FILE="${WIZ_LOG_FILE:-${LOG_DIR}/install_$(date +%F).log}"
 VERBOSE="${WIZ_VERBOSE:-0}"
 
+# Export variables needed by subprocesses
+export WIZ_ROOT LOG_DIR LOG_FILE DRY_RUN LOG_LEVEL VERBOSE
+
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
 
 # --- Logging Functions ---
+# All logging functions write to both stdout/stderr (for user visibility) and
+# the log file (for troubleshooting). Log levels control verbosity:
+#   0 = DEBUG (detailed diagnostic information)
+#   1 = INFO  (normal operational messages)
+#   2 = WARN  (warning messages, non-fatal)
+#   3 = ERROR (error messages, may be fatal)
 
-# timestamp: Returns current ISO 8601 timestamp
+# timestamp: Returns current ISO 8601 timestamp in UTC
+# Usage: timestamp
+# Output: 2025-01-15T14:30:00Z
 timestamp() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
@@ -64,53 +89,116 @@ _write_log() {
 
 # debug: Debug-level log (dim cyan) - level 0
 debug() {
-    [[ $LOG_LEVEL -le 0 ]] || return 0
-    echo -e "${DIM}${CYAN}[DEBUG]${NC} $*" >&2
-    _write_log "DEBUG" "$@"
+    local level="${LOG_LEVEL:-1}"
+    [[ $level -le 0 ]] || return 0
+    # Defensive color variable initialization
+    local dim="${DIM:-}"
+    local cyan="${CYAN:-}"
+    local nc="${NC:-}"
+    [[ -z "$dim" ]] && dim='\033[2m'
+    [[ -z "$cyan" ]] && cyan='\033[0;36m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    echo -e "${dim}${cyan}[DEBUG]${nc} $*" >&2
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "DEBUG" "$@"
+    fi
 }
 
 # log: Info-level log (green) - level 1
 log() {
-    [[ $LOG_LEVEL -le 1 ]] || return 0
-    echo -e "${GREEN}→${NC} $*"
-    _write_log "INFO" "$@"
+    local level="${LOG_LEVEL:-1}"
+    [[ $level -le 1 ]] || return 0
+    # Ensure color variables are available (defensive)
+    local green="${GREEN:-}"
+    local nc="${NC:-}"
+    [[ -z "$green" ]] && green='\033[0;32m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    echo -e "${green}→${nc} $*"
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "INFO" "$@"
+    fi
 }
 
 # warn: Warning-level log (yellow) - level 2
 warn() {
-    [[ $LOG_LEVEL -le 2 ]] || return 0
+    local level="${LOG_LEVEL:-1}"
+    [[ $level -le 2 ]] || return 0
     echo -e "${YELLOW}⚠${NC} $*" >&2
-    _write_log "WARN" "$@"
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "WARN" "$@"
+    fi
 }
 
 # error: Error-level log (red) - level 3
 error() {
-    echo -e "${RED}✖${NC} $*" >&2
-    _write_log "ERROR" "$@"
+    # Ensure color variables are available (defensive)
+    local red="${RED:-}"
+    local nc="${NC:-}"
+    [[ -z "$red" ]] && red='\033[0;31m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    echo -e "${red}✖${nc} $*" >&2
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "ERROR" "$@"
+    fi
 }
 
 # success: Success message (bold green)
 success() {
-    echo -e "${GREEN}${BOLD}✓${NC} $*"
-    _write_log "SUCCESS" "$@"
+    # Ensure color variables are available (defensive)
+    local green="${GREEN:-}"
+    local bold="${BOLD:-}"
+    local nc="${NC:-}"
+    [[ -z "$green" ]] && green='\033[0;32m'
+    [[ -z "$bold" ]] && bold='\033[1m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    echo -e "${green}${bold}✓${nc} $*"
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "SUCCESS" "$@"
+    fi
 }
 
 # progress: Show progress indicator
 progress() {
-    echo -e "${BLUE}⋯${NC} $*"
-    _write_log "PROGRESS" "$@"
+    # Defensive color variable initialization
+    local blue="${BLUE:-}"
+    local nc="${NC:-}"
+    [[ -z "$blue" ]] && blue='\033[0;34m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    echo -e "${blue}⋯${nc} $*"
+    # Only call _write_log if it's available (defensive for trap contexts)
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "PROGRESS" "$@"
+    fi
 }
 
 # --- Command Execution ---
+# The run() function provides consistent command execution with:
+# - Dry-run mode support (shows commands without executing)
+# - Automatic logging of all commands and their results
+# - Verbose mode support for debugging
+# - Proper error handling and exit code propagation
 
-# run: Execute command with dry-run support
+# run: Execute command with dry-run support and logging
 # Usage: run "command to execute"
+# Returns: Exit code of the executed command (or 0 in dry-run mode)
 run() {
     local cmd="$*"
     
     if [[ $DRY_RUN -eq 1 ]]; then
-        echo -e "${DIM}[DRY-RUN]${NC} $cmd"
-        _write_log "DRY-RUN" "$cmd"
+        # Defensive color variable initialization
+        local dim="${DIM:-}"
+        local nc="${NC:-}"
+        [[ -z "$dim" ]] && dim='\033[2m'
+        [[ -z "$nc" ]] && nc='\033[0m'
+        echo -e "${dim}[DRY-RUN]${nc} $cmd"
+        if declare -f _write_log >/dev/null 2>&1; then
+            _write_log "DRY-RUN" "$cmd"
+        fi
         return 0
     fi
     
@@ -118,7 +206,9 @@ run() {
         debug "Executing: $cmd"
     fi
     
-    _write_log "EXEC" "$cmd"
+    if declare -f _write_log >/dev/null 2>&1; then
+        _write_log "EXEC" "$cmd"
+    fi
     
     if eval "$cmd"; then
         [[ $VERBOSE -eq 1 ]] && debug "Success: $cmd"
@@ -129,11 +219,6 @@ run() {
         return $exit_code
     fi
 }
-
-# --- Error Handling ---
-
-# Trap errors and print helpful message with line number and command
-trap 'error "Script failed at line $LINENO: $BASH_COMMAND"' ERR
 
 # --- Environment Detection ---
 
@@ -156,6 +241,93 @@ detect_shell() {
 # is_wsl: Check if running in WSL
 is_wsl() {
     grep -qi microsoft /proc/version 2>/dev/null
+}
+
+# detect_windows_user: Auto-detect Windows username for WSL environments
+detect_windows_user() {
+    # Try to get Windows username from whoami.exe if available
+    if command -v whoami.exe >/dev/null 2>&1; then
+        local win_user
+        win_user=$(whoami.exe 2>/dev/null | tr -d '\r\n' | sed 's/.*\\//')
+        [[ -n "$win_user" ]] && echo "$win_user" && return 0
+    fi
+    
+    # Try to get from USERNAME environment variable (common in WSL)
+    if [[ -n "${USERNAME:-}" ]]; then
+        echo "$USERNAME"
+        return 0
+    fi
+    
+    # Fallback: scan /mnt/c/Users/ for first non-system directory
+    if [[ -d /mnt/c/Users ]]; then
+        for user_dir in /mnt/c/Users/*; do
+            [[ -d "$user_dir" ]] || continue
+            local basename
+            basename="$(basename "$user_dir")"
+            # Skip system directories
+            [[ "$basename" == "Public" ]] && continue
+            [[ "$basename" == "Default" ]] && continue
+            [[ "$basename" == "Default User" ]] && continue
+            echo "$basename"
+            return 0
+        done
+    fi
+    
+    return 1
+}
+
+# extract_ssh_keys_from_archive: Extract SSH keys from tar.gz archive
+# Usage: extract_ssh_keys_from_archive <archive_path> <target_dir>
+extract_ssh_keys_from_archive() {
+    local archive="$1"
+    local target_dir="$2"
+    
+    [[ -f "$archive" ]] || return 1
+    
+    # Extract archive to temp directory
+    local temp_extract
+    temp_extract="$(mktemp -d)"
+    tar -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
+        rm -rf "$temp_extract"
+        return 1
+    }
+    
+    # Check if archive contains .ssh directory
+    if [[ -d "$temp_extract/.ssh" ]]; then
+        # Archive contains .ssh directory, copy all files from it
+        for keyfile in "$temp_extract/.ssh"/*; do
+            [[ -f "$keyfile" ]] || continue
+            local basename
+            basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
+            
+            # Set correct permissions
+            if [[ "$basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            else
+                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+            fi
+        done
+    else
+        # Archive contents are directly in root, copy all key files
+        for keyfile in "$temp_extract"/*; do
+            [[ -f "$keyfile" ]] || continue
+            local basename
+            basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
+            
+            # Set correct permissions
+            if [[ "$basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            else
+                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    # Clean up temp directory
+    rm -rf "$temp_extract"
+    return 0
 }
 
 # --- File Operations ---
@@ -235,7 +407,7 @@ install_package() {
     fi
     
     log "Installing package: $pkg"
-    run "sudo apt-get install -y '$pkg'"
+    run "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold '$pkg'"
 }
 
 # install_packages: Install multiple packages
@@ -256,7 +428,24 @@ install_packages() {
     fi
     
     log "Installing ${#to_install[@]} packages: ${to_install[*]}"
-    run "sudo apt-get install -y ${to_install[*]}"
+    
+    # Build command with proper quoting for each package
+    local cmd="sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+    for pkg in "${to_install[@]}"; do
+        cmd="$cmd $(printf %q "$pkg")"
+    done
+    
+    run "$cmd"
+    
+    # Verify all packages were installed
+    for pkg in "${to_install[@]}"; do
+        if ! package_installed "$pkg"; then
+            error "Package installation verification failed: $pkg"
+            return 1
+        fi
+    done
+    
+    return 0
 }
 
 # --- Progress Indicators ---
@@ -271,12 +460,20 @@ progress_bar() {
     local filled=$((percent / 2))
     local empty=$((50 - filled))
     
-    printf "\r${BLUE}[%-50s]${NC} %3d%% %s" \
+    # Defensive color variable initialization
+    local blue="${BLUE:-}"
+    local nc="${NC:-}"
+    [[ -z "$blue" ]] && blue='\033[0;34m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    
+    printf "\r${blue}[%-50s]${nc} %3d%% %s" \
         "$(printf '#%.0s' $(seq 1 $filled))$(printf ' %.0s' $(seq 1 $empty))" \
         "$percent" \
         "$desc"
     
-    [[ $current -eq $total ]] && echo
+    if [[ $current -eq $total ]]; then
+        echo
+    fi
 }
 
 # spinner: Show a spinner while a command runs
@@ -291,16 +488,24 @@ spinner() {
     eval "$cmd" &
     pid=$!
     
+    # Defensive color variable initialization
+    local blue="${BLUE:-}"
+    local nc="${NC:-}"
+    local green="${GREEN:-}"
+    [[ -z "$blue" ]] && blue='\033[0;34m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    [[ -z "$green" ]] && green='\033[0;32m'
+    
     while kill -0 $pid 2>/dev/null; do
         local temp=${spinstr#?}
-        printf "\r${BLUE}%s${NC} %s" "${spinstr:0:1}" "$desc"
+        printf "\r${blue}%s${nc} %s" "${spinstr:0:1}" "$desc"
         spinstr=$temp${spinstr%"$temp"}
         sleep $delay
     done
     
     wait $pid
     local exit_code=$?
-    printf "\r${GREEN}✓${NC} %s\n" "$desc"
+    printf "\r${green}✓${nc} %s\n" "$desc"
     
     return $exit_code
 }
@@ -309,7 +514,7 @@ spinner() {
 
 # show_banner: Display application banner
 show_banner() {
-    cat <<'EOF'
+    cat << 'EOF'
 
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
@@ -549,10 +754,16 @@ verify_file_or_dir() {
 export -f timestamp log warn error success debug progress
 export -f run atomic_write backup_file append_to_file_once
 export -f command_exists package_installed install_package install_packages
-export -f detect_os detect_shell is_wsl
+export -f detect_os detect_shell is_wsl detect_windows_user extract_ssh_keys_from_archive
 export -f progress_bar spinner show_banner prepare_code_repo
 export -f curl_or_wget_download curl_or_wget_pipe get_command_version
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
+
+# --- Error Handling ---
+# Trap errors and print helpful message with line number and command
+# Set trap AFTER all functions are defined and logging is initialized
+# Use defensive checks to ensure both error and _write_log functions exist
+trap 'if declare -f error >/dev/null 2>&1 && declare -f _write_log >/dev/null 2>&1; then error "Script failed at line $LINENO: $BASH_COMMAND"; else echo "ERROR: Script failed at line $LINENO: $BASH_COMMAND" >&2; fi' ERR
 
 # Log library initialization
 debug "Common library loaded from: ${BASH_SOURCE[0]}"

@@ -238,7 +238,12 @@ MODULE_DEPS="${MODULE_DEPS:-}"
 module_start() {
     log ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "Module: ${BOLD}${MODULE_NAME}${NC}"
+    # Defensive color variable initialization
+    local bold="${BOLD:-}"
+    local nc="${NC:-}"
+    [[ -z "$bold" ]] && bold='\033[1m'
+    [[ -z "$nc" ]] && nc='\033[0m'
+    log "Module: ${bold}${MODULE_NAME}${nc}"
     log "Version: ${MODULE_VERSION}"
     log "Description: ${MODULE_DESCRIPTION}"
     [[ -n "$MODULE_DEPS" ]] && log "Dependencies: $MODULE_DEPS"
@@ -273,7 +278,7 @@ mark_module_complete() {
     local module="$1"
     local state_file="$WIZ_STATE_DIR/$module"
     
-    cat > "$state_file" <<EOF
+    cat > "$state_file" << EOF
 STATUS=complete
 TIMESTAMP=$(date +%s)
 VERSION="${MODULE_VERSION}"
@@ -289,7 +294,7 @@ mark_module_failed() {
     local error_msg="${2:-Unknown error}"
     local state_file="$WIZ_STATE_DIR/$module"
     
-    cat > "$state_file" <<EOF
+    cat > "$state_file" << EOF
 STATUS=failed
 TIMESTAMP=$(date +%s)
 ERROR="${error_msg}"

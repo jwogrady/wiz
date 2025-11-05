@@ -40,7 +40,7 @@ OHMYZSH_DIR="$HOME/.oh-my-zsh"
 
 # describe_zsh: Describe what this module will install
 describe_zsh() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🐚 ZSH CONFIGURATION
@@ -114,7 +114,7 @@ install_zsh() {
         log "Adding plugins configuration..."
         sed -i 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
             # If sed failed, append configuration
-            cat >> "$ZSHRC" <<'EOF'
+            cat >> "$ZSHRC" << 'EOF'
 
 # --- Wiz Zsh Configuration ---
 plugins=(git colored-man-pages extract)

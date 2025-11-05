@@ -36,70 +36,46 @@ MODULE_DEPS=""
 
 # --- Package Categories ---
 declare -a NETWORK_UTILS=(
-    bind9-host
-    dnsutils
-    iperf3
-    mtr
-    net-tools
-    netcat-openbsd
-    traceroute
-    whois
-    nmap
+    "bind9-host"    "dnsutils"    "iperf3"        "mtr"           "net-tools"
+    "netcat-openbsd" "traceroute" "whois"         "nmap"
 )
 
 declare -a MONITORING_TOOLS=(
-    btop
-    glances
-    htop
-    lshw
-    neofetch
-    strace
-    lsof
+    "btop"      "glances"    "htop"      "lshw"        "neofetch"
+    "strace"    "lsof"
 )
 
 declare -a BUILD_TOOLS=(
-    build-essential
-    cabal-install
-    cmake
+    "build-essential"    "cabal-install"    "cmake"
 )
 
 declare -a DEV_ESSENTIALS=(
-    git
-    curl
-    wget
-    unzip
-    zip
-    jq
-    tree
-    xz-utils
+    "git"       "curl"      "wget"      "unzip"       "zip"
+    "jq"        "tree"      "xz-utils"
 )
 
 declare -a SHELL_TOOLS=(
-    zsh
+    "zsh"
 )
 
 declare -a DOCKER_TOOLS=(
-    docker.io
-    docker-compose
+    "docker.io"        "docker-compose"
 )
 
 declare -a SECURITY=(
-    ca-certificates
-    gnupg
+    "ca-certificates"    "gnupg"
 )
 
 declare -a EDITORS=(
-    nano
-    vim
+    "nano"    "vim"
 )
 
 declare -a GITHUB_CLI=(
-    gh
+    "gh"
 )
 
 declare -a SYSTEM=(
-    lsb-release
-    sudo
+    "lsb-release"    "sudo"
 )
 
 # --- Helper Functions ---
@@ -112,18 +88,18 @@ is_enabled() {
     
     # Default values for known options
     case "$option" in
-        UPDATE_SYSTEM)
+        "UPDATE_SYSTEM")
             value="${UPDATE_SYSTEM:-1}"
-            ;;
-        UPGRADE_SYSTEM)
+        ;;
+        "UPGRADE_SYSTEM")
             value="${UPGRADE_SYSTEM:-0}"
-            ;;
-        AUTO_CLEAN)
+        ;;
+        "AUTO_CLEAN")
             value="${AUTO_CLEAN:-1}"
-            ;;
+        ;;
         *)
             value="${value:-0}"
-            ;;
+        ;;
     esac
     
     [[ "$value" == "1" ]] || [[ "$value" == "true" ]] || [[ "$value" == "yes" ]]
@@ -133,7 +109,7 @@ is_enabled() {
 
 # describe_essentials: Describe what this module will install
 describe_essentials() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📦 ESSENTIAL SYSTEM PACKAGES
@@ -161,13 +137,13 @@ install_essentials() {
     # Update system if configured
     if is_enabled "UPDATE_SYSTEM"; then
         progress "Updating package cache..."
-        run "sudo apt-get update -y" || module_fail "Failed to update package cache"
+        run "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y" || module_fail "Failed to update package cache"
     fi
     
     # Upgrade system if configured
     if is_enabled "UPGRADE_SYSTEM"; then
         progress "Upgrading system packages..."
-        run "sudo apt-get upgrade -y" || warn "System upgrade had issues, continuing..."
+        run "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold" || warn "System upgrade had issues, continuing..."
     fi
     
     # Install package categories
@@ -204,7 +180,7 @@ install_essentials() {
     # Clean up if configured
     if is_enabled "AUTO_CLEAN"; then
         progress "Cleaning package cache..."
-        run "sudo apt-get autoremove -y" || warn "Autoremove had issues"
+        run "sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y" || warn "Autoremove had issues"
         run "sudo apt-get clean" || warn "Clean had issues"
     fi
     

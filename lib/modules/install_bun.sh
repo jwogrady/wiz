@@ -37,7 +37,7 @@ MODULE_DEPS="essentials"
 
 # describe_bun: Describe what this module will install
 describe_bun() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🍞 BUN JAVASCRIPT RUNTIME
@@ -90,8 +90,12 @@ install_bun() {
         module_fail "Bun installation failed"
     fi
     
-    # Add Bun to PATH if installer added it to ~/.bun/bin
+    # Add Bun to PATH for current session
     add_to_path "$HOME/.bun/bin"
+    
+    # Ensure Bun is in shell configs (installer only adds to .bashrc)
+    progress "Configuring Bun in shell profiles..."
+    configure_bun_path
     
     # Verify installation
     if ! command_exists bun; then
@@ -103,6 +107,44 @@ install_bun() {
     success "Bun installed: v${version}"
     
     return 0
+}
+
+# configure_bun_path: Add Bun to shell configuration files
+configure_bun_path() {
+    local bun_config
+    read -r -d '' bun_config << 'EOF' || true
+# >>> Bun init >>>
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+# <<< Bun init <<<
+EOF
+    
+    # Add to .zshrc if it exists and Bun config is not already there
+    if [[ -f "$HOME/.zshrc" ]] && ! grep -q "BUN_INSTALL" "$HOME/.zshrc"; then
+        echo "" >> "$HOME/.zshrc"
+        echo "$bun_config" >> "$HOME/.zshrc"
+        debug "Added Bun configuration to .zshrc"
+    fi
+    
+    # Add to .bashrc if it exists and Bun config is not already there
+    # (Bun installer may have already added it, but we use our format)
+    if [[ -f "$HOME/.bashrc" ]]; then
+        # Remove old Bun installer format if present
+        if grep -q "BUN_INSTALL" "$HOME/.bashrc" && ! grep -q ">>> Bun init >>>" "$HOME/.bashrc"; then
+            # Backup and remove old entries
+            sed -i.bak '/^# bun$/d; /^export BUN_INSTALL=/d; /^export PATH=.*BUN_INSTALL/d' "$HOME/.bashrc"
+            debug "Removed old Bun configuration from .bashrc"
+        fi
+        
+        # Add our format if not present
+        if ! grep -q ">>> Bun init >>>" "$HOME/.bashrc"; then
+            echo "" >> "$HOME/.bashrc"
+            echo "$bun_config" >> "$HOME/.bashrc"
+            debug "Added Bun configuration to .bashrc"
+        fi
+    fi
+    
+    success "Bun PATH configured in shell profiles"
 }
 
 # verify_bun: Verify installation succeeded

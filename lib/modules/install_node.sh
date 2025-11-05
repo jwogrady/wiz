@@ -42,7 +42,7 @@ NVM_DIR="${HOME}/.nvm"
 
 # describe_node: Describe what this module will install
 describe_node() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📦 NODE.JS VIA NVM

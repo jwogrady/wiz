@@ -36,7 +36,7 @@ MODULE_DEPS="ALL"
 
 # describe_summary: Describe what this module will do
 describe_summary() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 INSTALLATION SUMMARY

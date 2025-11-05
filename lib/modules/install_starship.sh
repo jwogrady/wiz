@@ -2,12 +2,12 @@
 # ==============================================================================
 # Wiz - Terminal Magic Module: Starship Prompt
 # ==============================================================================
-# Installs and configures Starship cross-shell prompt with No Nerd Font preset.
-# Perfect for WSL environments where nerd fonts may not be available.
+# Installs and configures Starship cross-shell prompt with custom Cosmic Oasis preset.
+# Features seamless gradient transitions with polished appearance.
 #
 # Provides:
-#   - Starship prompt with clean, modern appearance
-#   - No Nerd Font preset (uses standard symbols)
+#   - Starship prompt with custom gradient theme
+#   - Cosmic Oasis - Polished Crescent Edition preset
 #   - Shell integration for Zsh and Bash
 #
 # Dependencies: zsh (for optimal experience)
@@ -30,41 +30,44 @@ source "${SCRIPT_DIR}/../module-base.sh"
 # Module metadata
 MODULE_NAME="starship"
 MODULE_VERSION="0.2.0"
-MODULE_DESCRIPTION="Starship cross-shell prompt with No Nerd Font preset"
+MODULE_DESCRIPTION="Starship cross-shell prompt with Cosmic Oasis preset"
 MODULE_DEPS="zsh"
 
 # Configuration
 STARSHIP_CONFIG="$HOME/.config/starship.toml"
 ZSHRC="$HOME/.zshrc"
 BASHRC="$HOME/.bashrc"
+# WIZ_ROOT is already set by module-base.sh (which sources common.sh)
+# Use the existing WIZ_ROOT instead of redefining it
+STARSHIP_PRESET="${WIZ_ROOT}/config/starship_linux.toml"
 
 # --- Module Interface Implementation ---
 
 # describe_starship: Describe what this module will install
 describe_starship() {
-    cat <<EOF
+    cat << EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✨ STARSHIP PROMPT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This module installs Starship, a minimal and fast prompt:
+This module installs Starship with the Cosmic Oasis preset:
 
   🚀 Fast & Minimal:     Written in Rust, blazing fast
-  🎨 No Nerd Fonts:      Works without special fonts (WSL-friendly)
+  🎨 Cosmic Oasis:       Custom gradient theme with polished appearance
   🐚 Cross-Shell:        Works in Zsh, Bash, Fish, etc.
-  ⚙️  Smart Context:      Shows git, node, python, rust info
+  ⚙️  Smart Context:      Shows git, node, bun, rust, golang info
   🎯 Customizable:       TOML-based configuration
 
 Features:
+  - Seamless gradient transitions
   - Git branch and status
   - Directory path with truncation
-  - Language version detection (Node, Python, Rust)
-  - Command execution time
+  - Language version detection (Node, Bun, Rust, Go, PHP)
+  - Time display
   - Exit status indicator
-  - Battery status
 
-Perfect for WSL environments without Nerd Fonts installed.
+Cosmic Oasis - Polished Crescent Edition with perfectly matched gradient joins.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
@@ -141,16 +144,16 @@ install_starship_fallback() {
     local starship_arch
     
     case "$arch" in
-        x86_64)
+        "x86_64")
             starship_arch="x86_64-unknown-linux-gnu"
-            ;;
-        aarch64|arm64)
+        ;;
+        "aarch64"|"arm64")
             starship_arch="aarch64-unknown-linux-gnu"
-            ;;
+        ;;
         *)
             error "Unsupported architecture: $arch"
             return 1
-            ;;
+        ;;
     esac
     
     local download_url="https://github.com/starship/starship/releases/latest/download/starship-${starship_arch}.tar.gz"
@@ -190,9 +193,9 @@ install_starship_fallback() {
     fi
 }
 
-# configure_starship_config: Create No Nerd Font configuration
+# configure_starship_config: Install custom Cosmic Oasis preset
 configure_starship_config() {
-    log "Configuring Starship with No Nerd Font preset..."
+    log "Configuring Starship with Cosmic Oasis preset..."
     
     # Create config directory
     mkdir -p "$(dirname "$STARSHIP_CONFIG")"
@@ -203,30 +206,33 @@ configure_starship_config() {
         log "Existing config backed up"
     fi
     
-    # Apply No Nerd Font preset
-    if command_exists starship; then
-        progress "Applying No Nerd Font preset..."
-        
-        # Download preset directly (force overwrite)
-        if starship preset no-nerd-font -o "$STARSHIP_CONFIG" </dev/null 2>/dev/null; then
-            success "No Nerd Font preset applied"
+    # Use custom preset from backup directory
+    if [[ -f "$STARSHIP_PRESET" ]]; then
+        progress "Installing Cosmic Oasis preset..."
+        if run "cp '$STARSHIP_PRESET' '$STARSHIP_CONFIG'"; then
+            success "Cosmic Oasis preset installed"
         else
-            warn "Failed to apply preset, creating manual configuration..."
+            error "Failed to copy preset file"
+            warn "Falling back to manual configuration..."
             create_manual_config
         fi
     else
+        warn "Preset file not found: $STARSHIP_PRESET"
+        warn "Falling back to manual configuration..."
         create_manual_config
     fi
     
     log "  ✓ Config saved to: $STARSHIP_CONFIG"
 }
 
-# create_manual_config: Create manual No Nerd Font configuration
+# create_manual_config: Create manual fallback configuration
 create_manual_config() {
-    cat > "$STARSHIP_CONFIG" <<'EOF'
+    log "Creating fallback configuration..."
+    cat > "$STARSHIP_CONFIG" << 'EOF'
 # ~/.config/starship.toml
-# Starship configuration - No Nerd Font preset (WSL-friendly)
+# Starship configuration - Fallback (WSL-friendly)
 # Generated by Wiz - Terminal Magic
+# Note: Custom preset not found, using basic configuration
 
 # Timeout for commands (milliseconds)
 command_timeout = 1000
