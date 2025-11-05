@@ -895,6 +895,60 @@ execute_module_wrapper() {
     fi
 }
 
+# show_installation_summary: Display what will be installed before starting
+show_installation_summary() {
+    local ordered_modules="$1"
+    local modules_to_install=()
+    local modules_to_skip=()
+    
+    # Convert space-separated string to array
+    local module_array
+    local old_ifs="$IFS"
+    IFS=' '
+    read -ra module_array <<< "$ordered_modules"
+    IFS="$old_ifs"
+    
+    # Categorize modules
+    for module in "${module_array[@]}"; do
+        if is_disabled "$module"; then
+            continue  # Skip disabled modules
+        elif is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+            modules_to_skip+=("$module")
+        else
+            modules_to_install+=("$module")
+        fi
+    done
+    
+    # Display summary
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  INSTALLATION PLAN"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    if [[ ${#modules_to_install[@]} -gt 0 ]]; then
+        IFS=' '
+        local install_display="${modules_to_install[*]}"
+        IFS="$old_ifs"
+        printf "  📦 Will install:   %s\n" "$install_display"
+        printf "  Total modules:    %d\n" "${#modules_to_install[@]}"
+    else
+        printf "  📦 Will install:   (none - all modules completed)\n"
+    fi
+    
+    if [[ ${#modules_to_skip[@]} -gt 0 ]]; then
+        IFS=' '
+        local skip_display="${modules_to_skip[*]}"
+        IFS="$old_ifs"
+        printf "  ⊘ Will skip:       %s\n" "$skip_display"
+        printf "  Skipped count:    %d\n" "${#modules_to_skip[@]}"
+    fi
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
 show_statistics() {
     local total=$((MODULES_COMPLETED + MODULES_FAILED + MODULES_SKIPPED))
     
@@ -954,6 +1008,9 @@ run_module_installation() {
         error "Failed to resolve dependencies"
         return 1
     fi
+    
+    # Show installation summary before starting
+    show_installation_summary "$ordered_modules"
     
     log "Starting module installation..."
     echo ""
