@@ -370,17 +370,18 @@ execute_module() {
         module_fail "Invalid module interface"
     fi
     
-    # Show description
-    "describe_${module_name}"
-    
-    # Start module
+    # Start module (shows module header)
     module_start
     
-    # Check if already complete
+    # Check if already complete (before showing description)
     if is_module_complete "$module_name" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
         module_skip "Already completed (use WIZ_FORCE_REINSTALL=1 to override)"
         return 0
     fi
+    
+    # Show description only if module will actually be installed
+    # This reduces clutter for already-installed modules
+    "describe_${module_name}"
     
     # Run installation
     if "install_${module_name}"; then
