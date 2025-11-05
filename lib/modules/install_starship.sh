@@ -206,40 +206,50 @@ configure_starship_config() {
         log "Existing config backed up"
     fi
     
-    # Check if Nerd Fonts are available (detect by checking if terminal supports certain Unicode ranges)
+    # Check if Nerd Fonts are available FIRST (before copying preset)
+    # Improved detection: check multiple patterns and font family names
     local use_nerd_fonts=0
     if command_exists fc-list 2>/dev/null; then
-        # Check if any Nerd Font is installed
-        if fc-list | grep -qi "nerd\|hack\|fira\|meslo\|jetbrains" 2>/dev/null; then
+        # Check font family names (more reliable than full font names)
+        if fc-list : family | grep -qiE "nerd|hack|fira|meslo|jetbrains|cascadia|dejavu|source.*code|ubuntu.*mono" 2>/dev/null; then
             use_nerd_fonts=1
-            debug "Nerd Fonts detected, using full Cosmic Oasis preset"
+            debug "Nerd Fonts detected via family names, using full Cosmic Oasis preset"
+        # Also check full font names as fallback
+        elif fc-list | grep -qiE "nerd|hack.*nerd|fira.*nerd|meslo.*nerd|jetbrains.*nerd" 2>/dev/null; then
+            use_nerd_fonts=1
+            debug "Nerd Fonts detected via full names, using full Cosmic Oasis preset"
         fi
     fi
     
-    # Try to detect font support by checking terminal capabilities
-    if [[ $use_nerd_fonts -eq 0 ]] && [[ -n "${TERM:-}" ]]; then
-        # Some terminals report font support in TERM or we can check via test
-        # For now, we'll use the preset and fall back gracefully
-        debug "Font detection inconclusive, using preset with fallback symbols"
+    # Additional check: If fontconfig shows any fonts with "Nerd" in name
+    if [[ $use_nerd_fonts -eq 0 ]] && command_exists fc-list 2>/dev/null; then
+        # Check for Nerd Font variants (case insensitive)
+        local font_check
+        font_check=$(fc-list 2>/dev/null | grep -oi "nerd" | head -1)
+        if [[ -n "$font_check" ]]; then
+            use_nerd_fonts=1
+            debug "Nerd Fonts detected via pattern match, using full Cosmic Oasis preset"
+        fi
     fi
     
-    # Use custom preset from config directory
+    # If Nerd Fonts not detected, use fallback immediately
+    if [[ $use_nerd_fonts -eq 0 ]]; then
+        log "Nerd Fonts not detected, using fallback configuration..."
+        create_fallback_config
+        return 0
+    fi
+    
+    # Only use the preset if Nerd Fonts are available
     if [[ -f "$STARSHIP_PRESET" ]]; then
-        progress "Installing Cosmic Oasis preset..."
+        progress "Installing Cosmic Oasis preset (Nerd Fonts detected)..."
         
         # Copy the preset
         if run "cp '$STARSHIP_PRESET' '$STARSHIP_CONFIG'"; then
             success "Cosmic Oasis preset installed"
-            
-            # If Nerd Fonts not detected, create a fallback version
-            if [[ $use_nerd_fonts -eq 0 ]]; then
-                log "Nerd Fonts not detected, creating fallback version..."
-                create_fallback_config
-            fi
         else
             error "Failed to copy preset file"
-            warn "Falling back to manual configuration..."
-            create_manual_config
+            warn "Falling back to configuration without Nerd Fonts..."
+            create_fallback_config
         fi
     else
         warn "Preset file not found: $STARSHIP_PRESET"
@@ -259,6 +269,7 @@ create_fallback_config() {
 
 format = """
 [░▒▓](#c678dd)\
+[ WIZ ](bg:#c678dd fg:#0f0a1f)\
 [>](fg:#c678dd bg:#3f2c7e)\
 $directory\
 [>](fg:#3f2c7e bg:#2e215a)\
