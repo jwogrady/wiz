@@ -80,23 +80,22 @@ get_dependencies() {
 has_dependencies() {
     local module="$1"
     local deps
-    deps="$(get_dependencies "$module")"
-    [[ -n "$deps" ]]
+    deps="$(get_dependencies "${module}")"
+    [[ -n "${deps}" ]]
 }
 
 # check_dependency: Check if a dependency is met
 # Usage: if check_dependency <dep>; then ...
 check_dependency() {
     local dep="$1"
-    
+
     # Special case: "ALL" means all previous modules must complete
-    [[ "$dep" == "ALL" ]] && return 0
-    
+    [[ "${dep}" == "ALL" ]] && return 0
+
     # Check if dependency module was completed successfully
-    if is_module_complete "$dep"; then
-        return 0
-    fi
-    
+    # shellcheck disable=SC2310
+    is_module_complete "${dep}" && return 0
+
     return 1
 }
 
@@ -105,29 +104,30 @@ check_dependency() {
 resolve_dependencies() {
     local module="$1"
     local deps
-    deps="$(get_dependencies "$module")"
-    
-    [[ -z "$deps" ]] && return 0
-    
+    deps="$(get_dependencies "${module}")"
+
+    [[ -z "${deps}" ]] && return 0
+
     # Special case for "ALL"
-    if [[ "$deps" == "ALL" ]]; then
-        debug "Module $module requires all previous modules to complete"
+    if [[ "${deps}" == "ALL" ]]; then
+        debug "Module ${module} requires all previous modules to complete"
         return 0
     fi
-    
+
     # Check each dependency
     local missing_deps=()
-    for dep in $deps; do
-        if ! check_dependency "$dep"; then
-            missing_deps+=("$dep")
+    for dep in ${deps}; do
+        # shellcheck disable=SC2310
+        if ! check_dependency "${dep}"; then
+            missing_deps+=("${dep}")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        error "Module $module has unmet dependencies: ${missing_deps[*]}"
+        error "Module ${module} has unmet dependencies: ${missing_deps[*]}"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -138,47 +138,49 @@ get_install_order() {
     local ordered=()
     local visited=()
     local visiting=()
-    
+
     # Topological sort using depth-first search
     _visit() {
         local module="$1"
-        
+
         # Check if already visited
         for v in "${visited[@]+"${visited[@]}"}"; do
-            [[ "$v" == "$module" ]] && return 0
+            [[ "${v}" == "${module}" ]] && return 0
         done
-        
+
         # Check for circular dependency
         for v in "${visiting[@]+"${visiting[@]}"}"; do
-            if [[ "$v" == "$module" ]]; then
-                error "Circular dependency detected: $module"
+            if [[ "${v}" == "${module}" ]]; then
+                error "Circular dependency detected: ${module}"
                 return 1
             fi
         done
-        
+
         # Mark as visiting
-        visiting+=("$module")
-        
+        visiting+=("${module}")
+
         # Visit dependencies first
         local deps
-        deps="$(get_dependencies "$module")"
-        if [[ -n "$deps" ]] && [[ "$deps" != "ALL" ]]; then
-            for dep in $deps; do
-                _visit "$dep" || return 1
+        deps="$(get_dependencies "${module}")"
+        if [[ -n "${deps}" ]] && [[ "${deps}" != "ALL" ]]; then
+            for dep in ${deps}; do
+                # shellcheck disable=SC2310
+                _visit "${dep}" || return 1
             done
         fi
-        
+
         # Remove from visiting, add to visited
-        visiting=("${visiting[@]/$module}")
-        visited+=("$module")
-        ordered+=("$module")
+        visiting=("${visiting[@]/${module}}")
+        visited+=("${module}")
+        ordered+=("${module}")
     }
-    
+
     # Visit each requested module
     for module in "${modules[@]}"; do
-        _visit "$module" || return 1
+        # shellcheck disable=SC2310
+        _visit "${module}" || return 1
     done
-    
+
     # Return ordered list
     echo "${ordered[@]}"
 }
@@ -187,35 +189,35 @@ get_install_order() {
 # Usage: if verify_dependencies; then ...
 verify_dependencies() {
     local failed=0
-    
+
     for module in "${!MODULE_DEPS[@]}"; do
-        local deps="${MODULE_DEPS[$module]}"
-        
-        [[ -z "$deps" ]] || [[ "$deps" == "ALL" ]] && continue
-        
-        for dep in $deps; do
-            if [[ ! -v MODULE_DEPS[$dep] ]]; then
-                error "Module $module depends on unknown module: $dep"
+        local deps="${MODULE_DEPS[${module}]}"
+
+        [[ -z "${deps}" ]] || [[ "${deps}" == "ALL" ]] && continue
+
+        for dep in ${deps}; do
+            if [[ ! -v MODULE_DEPS[${dep}] ]]; then
+                error "Module ${module} depends on unknown module: ${dep}"
                 failed=1
             fi
         done
     done
-    
-    return $failed
+
+    return ${failed}
 }
 
 # show_dependency_graph: Display module dependencies
 show_dependency_graph() {
     echo "Module Dependency Graph:"
     echo "======================="
-    
+
     for module in "${!MODULE_DEPS[@]}"; do
-        local deps="${MODULE_DEPS[$module]}"
-        
-        if [[ -z "$deps" ]]; then
-            echo "  $module (no dependencies)"
+        local deps="${MODULE_DEPS[${module}]}"
+
+        if [[ -z "${deps}" ]]; then
+            echo "  ${module} (no dependencies)"
         else
-            echo "  $module → $deps"
+            echo "  ${module} → ${deps}"
         fi
     done | sort
 }
@@ -223,8 +225,8 @@ show_dependency_graph() {
 # ==============================================================================
 # MODULE STATE CONFIGURATION
 # ==============================================================================
-export WIZ_STATE_DIR="${WIZ_STATE_DIR:-$HOME/.wiz/state}"
-mkdir -p "$WIZ_STATE_DIR"
+export WIZ_STATE_DIR="${WIZ_STATE_DIR:-${HOME}/.wiz/state}"
+mkdir -p "${WIZ_STATE_DIR}"
 
 # Module metadata defaults (override in each module)
 MODULE_NAME="${MODULE_NAME:-unknown}"
@@ -241,33 +243,33 @@ module_start() {
     # Defensive color variable initialization
     local bold="${BOLD:-}"
     local nc="${NC:-}"
-    [[ -z "$bold" ]] && bold='\033[1m'
-    [[ -z "$nc" ]] && nc='\033[0m'
+    [[ -z "${bold}" ]] && bold='\033[1m'
+    [[ -z "${nc}" ]] && nc='\033[0m'
     log "Module: ${bold}${MODULE_NAME}${nc}"
     log "Version: ${MODULE_VERSION}"
     log "Description: ${MODULE_DESCRIPTION}"
-    [[ -n "$MODULE_DEPS" ]] && log "Dependencies: $MODULE_DEPS"
+    [[ -n "${MODULE_DEPS}" ]] && log "Dependencies: ${MODULE_DEPS}"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log ""
 }
 
 # module_complete: Mark module as successfully completed
 module_complete() {
-    mark_module_complete "$MODULE_NAME"
-    success "Module completed: $MODULE_NAME"
+    mark_module_complete "${MODULE_NAME}"
+    success "Module completed: ${MODULE_NAME}"
 }
 
 # module_skip: Log skipped installation
 module_skip() {
     local reason="${1:-Already installed}"
-    log "Skipping $MODULE_NAME: $reason"
+    log "Skipping ${MODULE_NAME}: ${reason}"
 }
 
 # module_fail: Log failure and exit
 module_fail() {
     local msg="${1:-Installation failed}"
-    mark_module_failed "$MODULE_NAME" "$msg"
-    error "Module failed: $MODULE_NAME - $msg"
+    mark_module_failed "${MODULE_NAME}" "${msg}"
+    error "Module failed: ${MODULE_NAME} - ${msg}"
     exit 1
 }
 
@@ -276,58 +278,58 @@ module_fail() {
 # mark_module_complete: Mark module as successfully installed
 mark_module_complete() {
     local module="$1"
-    local state_file="$WIZ_STATE_DIR/$module"
-    
-    cat > "$state_file" << EOF
+    local state_file="${WIZ_STATE_DIR}/${module}"
+
+    cat > "${state_file}" << EOF
 STATUS=complete
 TIMESTAMP=$(date +%s)
 VERSION="${MODULE_VERSION}"
 DESCRIPTION="${MODULE_DESCRIPTION}"
 EOF
-    
-    debug "Marked complete: $module"
+
+    debug "Marked complete: ${module}"
 }
 
 # mark_module_failed: Mark module as failed
 mark_module_failed() {
     local module="$1"
     local error_msg="${2:-Unknown error}"
-    local state_file="$WIZ_STATE_DIR/$module"
-    
-    cat > "$state_file" << EOF
+    local state_file="${WIZ_STATE_DIR}/${module}"
+
+    cat > "${state_file}" << EOF
 STATUS=failed
 TIMESTAMP=$(date +%s)
 ERROR="${error_msg}"
 EOF
-    
-    debug "Marked failed: $module"
+
+    debug "Marked failed: ${module}"
 }
 
 # is_module_complete: Check if module was previously completed
 is_module_complete() {
     local module="$1"
-    local state_file="$WIZ_STATE_DIR/$module"
-    
-    [[ -f "$state_file" ]] || return 1
-    
+    local state_file="${WIZ_STATE_DIR}/${module}"
+
+    [[ -f "${state_file}" ]] || return 1
+
     # shellcheck source=/dev/null
-    source "$state_file"
-    
+    source "${state_file}"
+
     [[ "${STATUS:-}" == "complete" ]]
 }
 
 # get_module_state: Get module state information
 get_module_state() {
     local module="$1"
-    local state_file="$WIZ_STATE_DIR/$module"
-    
-    if [[ ! -f "$state_file" ]]; then
+    local state_file="${WIZ_STATE_DIR}/${module}"
+
+    if [[ ! -f "${state_file}" ]]; then
         echo "not-started"
         return
     fi
-    
+
     # shellcheck source=/dev/null
-    source "$state_file"
+    source "${state_file}"
     echo "${STATUS:-unknown}"
 }
 
@@ -337,25 +339,25 @@ get_module_state() {
 validate_module_interface() {
     local module_name="$1"
     local missing=()
-    
+
     # Check for required functions
     if ! declare -f "install_${module_name}" >/dev/null 2>&1; then
         missing+=("install_${module_name}")
     fi
-    
+
     if ! declare -f "verify_${module_name}" >/dev/null 2>&1; then
         missing+=("verify_${module_name}")
     fi
-    
+
     if ! declare -f "describe_${module_name}" >/dev/null 2>&1; then
         missing+=("describe_${module_name}")
     fi
-    
+
     if [[ ${#missing[@]} -gt 0 ]]; then
-        error "Module $module_name missing required functions: ${missing[*]}"
+        error "Module ${module_name} missing required functions: ${missing[*]}"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -364,28 +366,34 @@ validate_module_interface() {
 # execute_module: Run module with standard lifecycle
 execute_module() {
     local module_name="$1"
-    
+
     # Validate interface
-    if ! validate_module_interface "$module_name"; then
+    # shellcheck disable=SC2310
+    if ! validate_module_interface "${module_name}"; then
         module_fail "Invalid module interface"
     fi
-    
+
     # Start module (shows module header)
     module_start
-    
+
     # Check if already complete (before showing description)
-    if is_module_complete "$module_name" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+    # shellcheck disable=SC2310
+    is_module_complete "${module_name}"
+    local module_complete_status=$?
+    if [[ ${module_complete_status} -eq 0 ]] && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
         module_skip "Already completed (use WIZ_FORCE_REINSTALL=1 to override)"
         return 0
     fi
-    
+
     # Show description only if module will actually be installed
     # This reduces clutter for already-installed modules
     "describe_${module_name}"
-    
+
     # Run installation
+    # shellcheck disable=SC2310
     if "install_${module_name}"; then
         # Verify installation
+        # shellcheck disable=SC2310
         if "verify_${module_name}"; then
             module_complete
             return 0

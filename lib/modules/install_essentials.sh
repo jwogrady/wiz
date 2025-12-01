@@ -85,9 +85,9 @@ declare -a SYSTEM=(
 is_enabled() {
     local option="$1"
     local value="${!option:-}"
-    
+
     # Default values for known options
-    case "$option" in
+    case "${option}" in
         "UPDATE_SYSTEM")
             value="${UPDATE_SYSTEM:-1}"
         ;;
@@ -101,8 +101,8 @@ is_enabled() {
             value="${value:-0}"
         ;;
     esac
-    
-    [[ "$value" == "1" ]] || [[ "$value" == "true" ]] || [[ "$value" == "yes" ]]
+
+    [[ "${value}" == "1" ]] || [[ "${value}" == "true" ]] || [[ "${value}" == "yes" ]]
 }
 
 # --- Module Interface Implementation ---
@@ -135,17 +135,19 @@ EOF
 # install_essentials: Main installation logic
 install_essentials() {
     # Update system if configured
+    # shellcheck disable=SC2310
     if is_enabled "UPDATE_SYSTEM"; then
         progress "Updating package cache..."
         run "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y" || module_fail "Failed to update package cache"
     fi
-    
+
     # Upgrade system if configured
+    # shellcheck disable=SC2310
     if is_enabled "UPGRADE_SYSTEM"; then
         progress "Upgrading system packages..."
         run "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold" || warn "System upgrade had issues, continuing..."
     fi
-    
+
     # Collect all packages for batch installation (more efficient)
     local all_packages=(
         "${NETWORK_UTILS[@]}"
@@ -159,19 +161,20 @@ install_essentials() {
         "${GITHUB_CLI[@]}"
         "${SYSTEM[@]}"
     )
-    
+
     # Install all packages in one batch (more efficient than multiple calls)
     log "Installing ${#all_packages[@]} packages across all categories..."
     log "  Categories: network, monitoring, build, dev, shell, docker, security, editors, github-cli, system"
     install_packages "${all_packages[@]}"
-    
+
     # Clean up if configured
+    # shellcheck disable=SC2310
     if is_enabled "AUTO_CLEAN"; then
         progress "Cleaning package cache..."
         run "sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y" || warn "Autoremove had issues"
         run "sudo apt-get clean" || warn "Clean had issues"
     fi
-    
+
     return 0
 }
 
@@ -186,19 +189,20 @@ verify_essentials() {
         gcc
         docker
     )
-    
+
     log "Verifying critical commands..."
-    
+
     for cmd in "${critical_commands[@]}"; do
-        if command_exists "$cmd"; then
-            debug "  ✓ $cmd found"
+        # shellcheck disable=SC2310
+        if command_exists "${cmd}"; then
+            debug "  ✓ ${cmd} found"
         else
-            error "  ✖ $cmd not found"
+            error "  ✖ ${cmd} not found"
             failed=1
         fi
     done
-    
-    if [[ $failed -eq 0 ]]; then
+
+    if [[ ${failed} -eq 0 ]]; then
         success "All critical commands verified"
         return 0
     else

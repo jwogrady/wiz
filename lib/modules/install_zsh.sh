@@ -33,8 +33,8 @@ MODULE_DESCRIPTION="Zsh shell with Oh My Zsh framework"
 MODULE_DEPS="essentials"
 
 # Configuration
-ZSHRC="$HOME/.zshrc"
-OHMYZSH_DIR="$HOME/.oh-my-zsh"
+ZSHRC="${HOME}/.zshrc"
+OHMYZSH_DIR="${HOME}/.oh-my-zsh"
 
 # --- Module Interface Implementation ---
 
@@ -67,20 +67,23 @@ EOF
 # install_zsh: Main installation logic
 install_zsh() {
     # Verify zsh is installed
+    # shellcheck disable=SC2310
     if ! command_exists zsh; then
         module_fail "Zsh is not installed (should be installed by essentials module)"
     fi
-    
+
     log "Configuring Zsh..."
-    
+
     # Install Oh My Zsh if not present
-    if [[ ! -d "$OHMYZSH_DIR" ]]; then
+    if [[ ! -d "${OHMYZSH_DIR}" ]]; then
         log "Installing Oh My Zsh..."
-        
+
         # Download and run installer with --unattended flag
+        # shellcheck disable=SC2310
         if command_exists curl; then
             run "sh -c \"\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
                 warn "curl installation failed, trying wget..."
+                # shellcheck disable=SC2310
                 if command_exists wget; then
                     run "sh -c \"\$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
                         module_fail "Failed to install Oh My Zsh"
@@ -89,6 +92,7 @@ install_zsh() {
                     module_fail "Neither curl nor wget available"
                 fi
             }
+        # shellcheck disable=SC2310
         elif command_exists wget; then
             run "sh -c \"\$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
                 module_fail "Failed to install Oh My Zsh"
@@ -96,25 +100,25 @@ install_zsh() {
         else
             module_fail "Neither curl nor wget available"
         fi
-        
+
         success "Oh My Zsh installed"
     else
         log "Oh My Zsh already installed"
     fi
-    
+
     # Configure .zshrc with useful plugins
-    if [[ -f "$ZSHRC" ]]; then
-        backup_file "$ZSHRC"
+    if [[ -f "${ZSHRC}" ]]; then
+        backup_file "${ZSHRC}"
     fi
-    
+
     log "Configuring .zshrc..."
-    
+
     # Create or update .zshrc with common plugins
-    if ! grep -q "plugins=" "$ZSHRC" 2>/dev/null; then
+    if ! grep -q "plugins=" "${ZSHRC}" 2>/dev/null; then
         log "Adding plugins configuration..."
-        sed -i 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
+        sed -i 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "${ZSHRC}" 2>/dev/null || {
             # If sed failed, append configuration
-            cat >> "$ZSHRC" << 'EOF'
+            cat >> "${ZSHRC}" << 'EOF'
 
 # --- Wiz Zsh Configuration ---
 plugins=(git colored-man-pages extract)
@@ -122,48 +126,51 @@ plugins=(git colored-man-pages extract)
 EOF
         }
     fi
-    
+
     # Set as default shell (if not already)
     local current_shell
-    current_shell="$(getent passwd "$USER" | cut -d: -f7)"
-    
-    if [[ "$current_shell" != "$(command -v zsh)" ]]; then
+    current_shell="$(getent passwd "${USER}" | cut -d: -f7)"
+
+    if [[ "${current_shell}" != "$(command -v zsh)" ]]; then
         log "Setting Zsh as default shell..."
         run "chsh -s $(command -v zsh)" || warn "Could not change default shell (may require password)"
         success "Zsh set as default shell"
     else
         debug "Zsh already set as default shell"
     fi
-    
+
     success "Zsh configuration complete"
-    
+
     return 0
 }
 
 # verify_zsh: Verify installation succeeded
 verify_zsh() {
     log "Verifying Zsh installation..."
-    
+
     local failed=0
-    
+
     # Check zsh command exists
+    # shellcheck disable=SC2310
     if ! verify_command_exists zsh; then
         ((failed++))
     fi
-    
+
     # Check Oh My Zsh directory
-    if ! verify_file_or_dir "$OHMYZSH_DIR" "Oh My Zsh directory"; then
+    # shellcheck disable=SC2310
+    if ! verify_file_or_dir "${OHMYZSH_DIR}" "Oh My Zsh directory"; then
         ((failed++))
     fi
-    
+
     # Check .zshrc exists
-    verify_file_or_dir "$ZSHRC" ".zshrc" 1
-    
-    if [[ $failed -gt 0 ]]; then
+    # shellcheck disable=SC2310
+    verify_file_or_dir "${ZSHRC}" ".zshrc" 1
+
+    if [[ ${failed} -gt 0 ]]; then
         error "Verification failed with ${failed} error(s)"
         return 1
     fi
-    
+
     success "Zsh installation verified successfully"
     return 0
 }
