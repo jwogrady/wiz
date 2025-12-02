@@ -196,11 +196,11 @@ Installs ~50+ essential packages including:
 ```
 wiz/
 ├── bin/
-│   ├── bootstrap          # One-line installer script
-│   └── install            # Main installer script
+│   ├── bootstrap              # One-line curl-pipe installer
+│   └── install                # Main installer script
 ├── lib/
-│   ├── common.sh          # Common utilities and helpers
-│   ├── module-base.sh     # Module framework and dependency management
+│   ├── common.sh              # Common utilities and helpers
+│   ├── module-base.sh         # Module framework and dependency management
 │   └── modules/
 │       ├── install_essentials.sh
 │       ├── install_zsh.sh
@@ -210,19 +210,26 @@ wiz/
 │       ├── install_neovim.sh
 │       └── install_summary.sh
 ├── config/
-│   └── starship_linux.toml  # Starship configuration
+│   └── starship_linux.toml    # Starship configuration
 ├── scripts/
-│   ├── test_dry_run.sh      # Dry-run smoke test
-│   └── test_github.sh       # GitHub connectivity test
+│   ├── check_bash_style.sh    # Bash style guide checker
+│   ├── setup_git_hooks.sh     # Git hooks setup
+│   ├── test_dry_run.sh        # Dry-run smoke test
+│   ├── test_github.sh         # GitHub connectivity test
+│   └── validate_commit_msg.sh # Commit message validator
 ├── docs/
-│   ├── CODE_REVIEW.md       # Code review documentation
-│   ├── RELEASE.md           # Release process guide
-│   └── SSH_KEYS.md          # SSH key management guide
-├── logs/                    # Installation logs
-└── .wiz/                    # State and cache directory
-    ├── state/               # Module completion state
-    ├── cache/               # Cache files
-    └── backups/             # Backup files
+│   ├── CODE_REVIEW.md             # Code review documentation
+│   ├── CONVENTIONAL_COMMITS_SETUP.md  # Commit message setup
+│   ├── RELEASE.md                 # Release process guide
+│   ├── SSH_KEYS.md                # SSH key management guide
+│   ├── STATUS26_BASH_STYLE_GUIDE_v1.md  # Bash coding standards
+│   ├── USER_EXPERIENCE.md         # User experience guide
+│   └── WORKFLOW_ANALYSIS.md       # Workflow analysis
+├── logs/                      # Installation logs
+└── .wiz/                      # State and cache directory
+    ├── state/                 # Module completion state
+    ├── cache/                 # Cache files
+    └── backups/               # Backup files
 ```
 
 ### Module System
@@ -459,6 +466,8 @@ get_command_version "cmd"  # Returns: version string
 - **[Code Review](docs/CODE_REVIEW.md)** - Code quality guidelines
 - **[Bash Style Guide](docs/STATUS26_BASH_STYLE_GUIDE_v1.md)** - Status26 Bash coding standards
 - **[Conventional Commits Setup](docs/CONVENTIONAL_COMMITS_SETUP.md)** - Git hooks and commit message validation
+- **[User Experience](docs/USER_EXPERIENCE.md)** - User journey and UX design principles
+- **[Workflow Analysis](docs/WORKFLOW_ANALYSIS.md)** - Efficiency and optimization analysis
 
 ---
 
