@@ -48,7 +48,7 @@ Wiz is a comprehensive, modular installation system for setting up a complete de
 ### One-Line Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/main/bin/bootstrap | bash
+curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/master/bin/bootstrap | bash
 ```
 
 This will:
