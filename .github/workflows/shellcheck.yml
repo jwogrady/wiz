@@ -16,4 +16,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run ShellCheck on scripts
         run: |
-          find . -type f \( -name '*.sh' -o -name 'bootstrap.sh' -o -name 'install.sh' \) -exec shellcheck {} +
+          # Find all shell scripts:
+          # - All .sh files
+          # - bin/bootstrap and bin/install (no .sh extension but are bash scripts)
+          find . -type f \( -name '*.sh' -o -path './bin/bootstrap' -o -path './bin/install' \) \
+            -not -path './.git/*' \
+            -exec shellcheck --severity=error {} +
