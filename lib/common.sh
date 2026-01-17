@@ -777,9 +777,12 @@ install_package() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+            run env DEBIAN_FRONTEND=noninteractive \
+                DEBCONF_NONINTERACTIVE_SEEN=true \
+                sudo -E apt-get install -y \
                 -o Dpkg::Options::=--force-confdef \
                 -o Dpkg::Options::=--force-confold \
+                -o DPkg::Pre-Install-Pkgs::= \
                 "$pkg"
             ;;
         dnf)
@@ -824,9 +827,12 @@ install_packages() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+            run env DEBIAN_FRONTEND=noninteractive \
+                DEBCONF_NONINTERACTIVE_SEEN=true \
+                sudo -E apt-get install -y \
                 -o Dpkg::Options::=--force-confdef \
                 -o Dpkg::Options::=--force-confold \
+                -o DPkg::Pre-Install-Pkgs::= \
                 "${to_install[@]}"
             ;;
         dnf)

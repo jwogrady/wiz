@@ -133,8 +133,8 @@ EOF
         # Get zsh path first, then pass to run safely
         local zsh_path
         zsh_path="$(command -v zsh)"
-        run chsh -s "$zsh_path" || warn "Could not change default shell (may require password)"
-        success "Zsh set as default shell"
+        run sudo chsh -s "$zsh_path" "$USER" || warn "Could not change default shell"
+        success "Zsh set as default shell (will take effect on next login)"
     else
         debug "Zsh already set as default shell"
     fi
