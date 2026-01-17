@@ -90,11 +90,12 @@ install_starship() {
         progress "Downloading Starship installer..."
         
         # Download and run installer directly with proper arguments
+        # NOTE: Uses run_shell because of pipe to sh
         if command_exists curl; then
-            run "curl -sS https://starship.rs/install.sh | sh -s -- --yes" || {
+            run_shell "curl -sS https://starship.rs/install.sh | sh -s -- --yes" || {
                 warn "curl installation failed, trying wget..."
                 if command_exists wget; then
-                    run "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
+                    run_shell "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
                         warn "Official installer failed, trying alternative methods..."
                         install_starship_fallback
                     }
@@ -104,7 +105,7 @@ install_starship() {
                 fi
             }
         elif command_exists wget; then
-            run "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
+            run_shell "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
                 warn "Official installer failed, trying alternative methods..."
                 install_starship_fallback
             }
@@ -162,12 +163,12 @@ install_starship_fallback() {
     log "Downloading starship binary for ${starship_arch}..."
     
     if command_exists curl; then
-        run "curl -fsSL -o '$temp_file' '$download_url'" || {
+        run curl -fsSL -o "$temp_file" "$download_url" || {
             error "Failed to download starship binary"
             return 1
         }
     elif command_exists wget; then
-        run "wget -q -O '$temp_file' '$download_url'" || {
+        run wget -q -O "$temp_file" "$download_url" || {
             error "Failed to download starship binary"
             return 1
         }
@@ -175,11 +176,11 @@ install_starship_fallback() {
         error "Neither curl nor wget available"
         return 1
     fi
-    
+
     log "Extracting starship binary..."
-    run "tar -xzf '$temp_file' -C '$install_dir'"
-    run "chmod +x '$install_dir/starship'"
-    run "rm -f '$temp_file'"
+    run tar -xzf "$temp_file" -C "$install_dir"
+    run chmod +x "$install_dir/starship"
+    run rm -f "$temp_file"
     
     # Add to PATH
     add_to_path "$install_dir"
@@ -244,7 +245,7 @@ configure_starship_config() {
         progress "Installing Cosmic Oasis preset (Nerd Fonts detected)..."
         
         # Copy the preset
-        if run "cp '$STARSHIP_PRESET' '$STARSHIP_CONFIG'"; then
+        if run cp "$STARSHIP_PRESET" "$STARSHIP_CONFIG"; then
             success "Cosmic Oasis preset installed"
         else
             error "Failed to copy preset file"
@@ -381,7 +382,7 @@ fi
         # Remove any existing Starship config first
         if grep -q "Wiz Starship Prompt" "$BASHRC" 2>/dev/null; then
             # Remove old config between markers
-            sed -i '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$BASHRC"
+            sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$BASHRC"
         fi
         # Append new config at the end
         echo "$starship_init" >> "$BASHRC"
@@ -393,7 +394,7 @@ fi
         # Remove any existing Starship config first
         if grep -q "Wiz Starship Prompt" "$ZSHRC" 2>/dev/null; then
             # Remove old config between markers
-            sed -i '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$ZSHRC"
+            sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$ZSHRC"
         fi
         # Append new config at the end
         echo "$starship_zsh_init" >> "$ZSHRC"

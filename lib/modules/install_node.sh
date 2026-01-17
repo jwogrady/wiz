@@ -105,11 +105,12 @@ install_node() {
     add_nvm_to_shell_rc "${HOME}/.zshrc"
     
     # Install or update Node LTS
+    # NOTE: nvm is a shell function, so we must use run_shell
     if ! command_exists node; then
         log "Installing Node.js LTS..."
         # Temporarily disable nounset for NVM (it uses unset variables internally)
         set +u
-        run "nvm install --lts" || {
+        run_shell "nvm install --lts" || {
             set -u
             module_fail "Failed to install Node.js LTS"
         }
@@ -117,30 +118,30 @@ install_node() {
     else
         log "Updating to latest LTS..."
         set +u
-        run "nvm install --lts" || warn "LTS update had issues, continuing..."
-        run "nvm alias default 'lts/*'" || warn "Failed to set default alias"
+        run_shell "nvm install --lts" || warn "LTS update had issues, continuing..."
+        run_shell "nvm alias default 'lts/*'" || warn "Failed to set default alias"
         set -u
     fi
-    
+
     # Use LTS version
     set +u
-    run "nvm use --lts" || {
+    run_shell "nvm use --lts" || {
         set -u
         module_fail "Failed to switch to LTS version"
     }
     set -u
-    
+
     # Configure npm
     log "Configuring npm..."
-    run "npm set fund false" || warn "Failed to disable funding messages"
-    run "npm set audit false" || warn "Failed to disable audit"
-    run "npm set audit-level moderate" || warn "Failed to set audit level"
-    run "npm set loglevel warn" || warn "Failed to set log level"
-    
+    run npm config set fund false || warn "Failed to disable funding messages"
+    run npm config set audit false || warn "Failed to disable audit"
+    run npm config set audit-level moderate || warn "Failed to set audit level"
+    run npm config set loglevel warn || warn "Failed to set log level"
+
     # Enable Corepack for Yarn & pnpm
     if command_exists corepack; then
         log "Enabling Corepack..."
-        run "corepack enable" || warn "Failed to enable Corepack"
+        run corepack enable || warn "Failed to enable Corepack"
     fi
     
     # Display versions

@@ -75,18 +75,18 @@ install_neovim() {
     # Note: apt-get update is handled by essentials module, so we skip it here
     if command_exists apt; then
         progress "Installing via apt..."
-        run "sudo apt-get install -y neovim" && {
+        run sudo apt-get install -y neovim && {
             success "Neovim installed via apt"
             configure_neovim
             return 0
         }
         warn "apt installation failed, trying alternative methods..."
     fi
-    
+
     # Try snap installation
     if command_exists snap; then
         progress "Installing via snap..."
-        run "sudo snap install nvim --classic" && {
+        run sudo snap install nvim --classic && {
             success "Neovim installed via snap"
             configure_neovim
             return 0
@@ -106,7 +106,7 @@ install_neovim() {
         module_fail "Neovim AppImage download failed"
     }
     
-    run "chmod +x '$appimage_path'"
+    run chmod +x "$appimage_path"
     add_to_path "$appimage_dir"
     
     success "Neovim AppImage installed"

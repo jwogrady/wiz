@@ -75,13 +75,14 @@ install_bun() {
     progress "Downloading Bun installer..."
     
     # Download and run Bun installer (it's already non-interactive)
+    # NOTE: Uses run_shell because of pipe to bash
     if command_exists curl; then
-        run "curl -fsSL https://bun.sh/install | bash" || {
+        run_shell "curl -fsSL https://bun.sh/install | bash" || {
             error "Bun installation via curl failed"
             module_fail "Bun installation failed"
         }
     elif command_exists wget; then
-        run "wget -qO- https://bun.sh/install | bash" || {
+        run_shell "wget -qO- https://bun.sh/install | bash" || {
             error "Bun installation via wget failed"
             module_fail "Bun installation failed"
         }

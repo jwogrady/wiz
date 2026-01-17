@@ -138,16 +138,29 @@ get_install_order() {
     local ordered=()
     local visited=()
     local visiting=()
-    
+
+    # _array_remove: Properly remove element from array (helper function)
+    # Usage: _array_remove "array_name" "element"
+    _array_remove() {
+        local -n arr=$1
+        local elem=$2
+        local new_arr=()
+        local v
+        for v in "${arr[@]+"${arr[@]}"}"; do
+            [[ "$v" != "$elem" ]] && new_arr+=("$v")
+        done
+        arr=("${new_arr[@]+"${new_arr[@]}"}")
+    }
+
     # Topological sort using depth-first search
     _visit() {
         local module="$1"
-        
+
         # Check if already visited
         for v in "${visited[@]+"${visited[@]}"}"; do
             [[ "$v" == "$module" ]] && return 0
         done
-        
+
         # Check for circular dependency
         for v in "${visiting[@]+"${visiting[@]}"}"; do
             if [[ "$v" == "$module" ]]; then
@@ -155,10 +168,10 @@ get_install_order() {
                 return 1
             fi
         done
-        
+
         # Mark as visiting
         visiting+=("$module")
-        
+
         # Visit dependencies first
         local deps
         deps="$(get_dependencies "$module")"
@@ -167,18 +180,18 @@ get_install_order() {
                 _visit "$dep" || return 1
             done
         fi
-        
-        # Remove from visiting, add to visited
-        visiting=("${visiting[@]/$module}")
+
+        # Remove from visiting, add to visited (proper array removal)
+        _array_remove visiting "$module"
         visited+=("$module")
         ordered+=("$module")
     }
-    
+
     # Visit each requested module
     for module in "${modules[@]}"; do
         _visit "$module" || return 1
     done
-    
+
     # Return ordered list
     echo "${ordered[@]}"
 }
@@ -223,7 +236,8 @@ show_dependency_graph() {
 # ==============================================================================
 # MODULE STATE CONFIGURATION
 # ==============================================================================
-export WIZ_STATE_DIR="${WIZ_STATE_DIR:-$HOME/.wiz/state}"
+# WIZ_STATE_DIR is defined in common.sh, but ensure it exists if this is sourced independently
+: "${WIZ_STATE_DIR:=$HOME/.wiz/state}"
 mkdir -p "$WIZ_STATE_DIR"
 
 # Module metadata defaults (override in each module)
@@ -303,32 +317,43 @@ EOF
     debug "Marked failed: $module"
 }
 
+# _parse_state_value: Safely extract a value from state file (no sourcing)
+# Usage: value=$(_parse_state_value "$state_file" "KEY")
+_parse_state_value() {
+    local state_file="$1"
+    local key="$2"
+    [[ -f "$state_file" ]] || return 1
+    # Extract value using grep+sed - safe, no code execution
+    grep -m1 "^${key}=" "$state_file" 2>/dev/null | sed "s/^${key}=//"
+}
+
 # is_module_complete: Check if module was previously completed
 is_module_complete() {
     local module="$1"
     local state_file="$WIZ_STATE_DIR/$module"
-    
+
     [[ -f "$state_file" ]] || return 1
-    
-    # shellcheck source=/dev/null
-    source "$state_file"
-    
-    [[ "${STATUS:-}" == "complete" ]]
+
+    # Safe parsing - no source/eval
+    local status
+    status=$(_parse_state_value "$state_file" "STATUS")
+    [[ "$status" == "complete" ]]
 }
 
 # get_module_state: Get module state information
 get_module_state() {
     local module="$1"
     local state_file="$WIZ_STATE_DIR/$module"
-    
+
     if [[ ! -f "$state_file" ]]; then
         echo "not-started"
         return
     fi
-    
-    # shellcheck source=/dev/null
-    source "$state_file"
-    echo "${STATUS:-unknown}"
+
+    # Safe parsing - no source/eval
+    local status
+    status=$(_parse_state_value "$state_file" "STATUS")
+    echo "${status:-unknown}"
 }
 
 # --- Module Interface Validation ---
@@ -399,7 +424,7 @@ execute_module() {
 
 # --- Export Functions ---
 export -f module_start module_complete module_skip module_fail
-export -f mark_module_complete mark_module_failed is_module_complete get_module_state
+export -f mark_module_complete mark_module_failed is_module_complete get_module_state _parse_state_value
 export -f validate_module_interface execute_module
 export -f get_dependencies has_dependencies check_dependency
 export -f resolve_dependencies get_install_order verify_dependencies
