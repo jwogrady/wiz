@@ -265,18 +265,24 @@ validate_env() {
 
 # validate_git_name: Validate Git name format
 # Usage: validate_git_name <name>
+# Security: Rejects shell metacharacters to prevent injection when written to .env
 validate_git_name() {
     local name="$1"
-    
+
     # Name must not be empty or only whitespace
     [[ -n "${name// }" ]] || return 1
-    
+
     # Name should be at least 2 characters
     [[ ${#name} -ge 2 ]] || return 1
-    
+
     # Name should not contain only special characters
     [[ "$name" =~ [[:alnum:]] ]] || return 1
-    
+
+    # Security: Reject shell metacharacters that could cause injection
+    # Allowed: letters, numbers, spaces, hyphens, apostrophes, periods
+    # Rejected: backticks, $, ", \, newlines, etc.
+    [[ "$name" =~ ^[a-zA-Z0-9\ \'\.\-]+$ ]] || return 1
+
     return 0
 }
 
@@ -375,10 +381,11 @@ write_env() {
         exit 1
     fi
     
-    # Write .env file
+    # Write .env file with restricted permissions (contains user info)
     log "Writing configuration to .env..."
-    
-    cat > "$envfile" << EOF
+
+    # Create with mode 0600 (owner read/write only) using umask
+    ( umask 077 && cat > "$envfile" << EOF
 # Wiz Configuration
 # Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
@@ -387,8 +394,9 @@ GIT_EMAIL="$GIT_EMAIL"
 GITHUB_USERNAME="$GITHUB_USERNAME"
 WIN_USER="$WIN_USER"
 EOF
-    
-    success "Configuration saved to .env"
+    )
+
+    success "Configuration saved to .env (mode 0600)"
     
     # Source the file we just created
     # shellcheck source=/dev/null
@@ -769,7 +777,8 @@ SSH_CONFIG_EOF
             sed_inplace '/# --- Wiz SSH Agent Configuration ---/,/# --- End Wiz SSH Agent Configuration ---/d' "$bashrc"
         fi
         # Prepend to file (SSH agent should load early)
-        { echo "$ssh_agent_config"; cat "$bashrc"; } > "$bashrc.tmp" && mv "$bashrc.tmp" "$bashrc"
+        local tmp_bashrc
+        tmp_bashrc=$(mktemp) && { echo "$ssh_agent_config"; cat "$bashrc"; } > "$tmp_bashrc" && mv "$tmp_bashrc" "$bashrc"
         debug "SSH agent config added to .bashrc"
     fi
     
@@ -788,14 +797,14 @@ SSH_CONFIG_EOF
             local plugins_line
             plugins_line=$(grep -n "^plugins=" "$zshrc" | head -1 | cut -d: -f1)
             if [[ -n "$plugins_line" ]]; then
-                # Create secure temp file (mktemp avoids race conditions)
-                local tmp_insert
-                if tmp_insert=$(mktemp); then
+                # Create secure temp files (mktemp avoids race conditions)
+                local tmp_insert tmp_zshrc
+                if tmp_insert=$(mktemp) && tmp_zshrc=$(mktemp); then
                     echo "$ssh_agent_config" > "$tmp_insert"
                     awk -v line="$plugins_line" -v tmpfile="$tmp_insert" '
                         NR == line { print; while ((getline < tmpfile) > 0) print; close(tmpfile); next }
                         { print }
-                    ' "$zshrc" > "$zshrc.tmp" && mv "$zshrc.tmp" "$zshrc"
+                    ' "$zshrc" > "$tmp_zshrc" && mv "$tmp_zshrc" "$zshrc"
                     rm -f "$tmp_insert"
                     inserted=1
                 fi
@@ -803,7 +812,8 @@ SSH_CONFIG_EOF
         fi
         # Fallback: prepend to file if insertion failed or not applicable
         if [[ $inserted -eq 0 ]]; then
-            { echo "$ssh_agent_config"; cat "$zshrc"; } > "$zshrc.tmp" && mv "$zshrc.tmp" "$zshrc"
+            local tmp_zshrc_fallback
+            tmp_zshrc_fallback=$(mktemp) && { echo "$ssh_agent_config"; cat "$zshrc"; } > "$tmp_zshrc_fallback" && mv "$tmp_zshrc_fallback" "$zshrc"
         fi
         debug "SSH agent config added to .zshrc"
     fi
@@ -852,13 +862,19 @@ list_modules() {
         
         (
             # shellcheck source=/dev/null
-            source "$module_file"
-            
+            if ! source "$module_file" 2>/dev/null; then
+                printf "  %-15s v%-8s %s\n" \
+                    "$module_name" \
+                    "ERROR" \
+                    "Failed to load module"
+                exit 1
+            fi
+
             printf "  %-15s v%-8s %s\n" \
                 "$module_name" \
                 "${MODULE_VERSION:-unknown}" \
                 "${MODULE_DESCRIPTION:-No description}"
-        )
+        ) || warn "Could not read module: $module_name"
     done
     
     echo ""
@@ -880,7 +896,7 @@ execute_module_wrapper() {
 
     if [[ ! -f "$module_file" ]]; then
         error "Module not found: $module" \
-            "Available modules: $(ls -1 ${MODULES_DIR}/install_*.sh | sed 's|.*/install_||;s|\.sh$||' | tr '\n' ' ')"
+            "Available modules: $(ls -1 "${MODULES_DIR}"/install_*.sh | sed 's|.*/install_||;s|\.sh$||' | tr '\n' ' ')"
         return 1
     fi
 

@@ -178,7 +178,7 @@ install_starship_fallback() {
     fi
 
     log "Extracting starship binary..."
-    run tar -xzf "$temp_file" -C "$install_dir"
+    run tar --no-absolute-names -xzf "$temp_file" -C "$install_dir"
     run chmod +x "$install_dir/starship"
     run rm -f "$temp_file"
     

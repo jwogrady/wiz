@@ -504,7 +504,7 @@ extract_ssh_keys_from_archive() {
     # Extract archive to temp directory
     local temp_extract
     temp_extract="$(mktemp -d)"
-    tar -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
+    tar --no-absolute-names -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
         rm -rf "$temp_extract"
         return 1
     }
