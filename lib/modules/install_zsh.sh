@@ -78,11 +78,12 @@ install_zsh() {
         log "Installing Oh My Zsh..."
         
         # Download and run installer with --unattended flag
+        # NOTE: Uses run_shell due to command substitution and pipes
         if command_exists curl; then
-            run "sh -c \"\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
+            run_shell 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
                 warn "curl installation failed, trying wget..."
                 if command_exists wget; then
-                    run "sh -c \"\$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
+                    run_shell 'sh -c "$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
                         module_fail "Failed to install Oh My Zsh"
                     }
                 else
@@ -90,7 +91,7 @@ install_zsh() {
                 fi
             }
         elif command_exists wget; then
-            run "sh -c \"\$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || {
+            run_shell 'sh -c "$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
                 module_fail "Failed to install Oh My Zsh"
             }
         else
@@ -112,7 +113,7 @@ install_zsh() {
     # Create or update .zshrc with common plugins
     if ! grep -q "plugins=" "$ZSHRC" 2>/dev/null; then
         log "Adding plugins configuration..."
-        sed -i 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
+        sed_inplace 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
             # If sed failed, append configuration
             cat >> "$ZSHRC" << 'EOF'
 
@@ -129,7 +130,10 @@ EOF
     
     if [[ "$current_shell" != "$(command -v zsh)" ]]; then
         log "Setting Zsh as default shell..."
-        run "chsh -s $(command -v zsh)" || warn "Could not change default shell (may require password)"
+        # Get zsh path first, then pass to run safely
+        local zsh_path
+        zsh_path="$(command -v zsh)"
+        run chsh -s "$zsh_path" || warn "Could not change default shell (may require password)"
         success "Zsh set as default shell"
     else
         debug "Zsh already set as default shell"

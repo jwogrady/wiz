@@ -37,14 +37,14 @@ tests_failed=0
 # Helper functions
 pass() {
     echo -e "${GREEN}✓${NC} $1"
-    ((tests_passed++))
-    ((tests_run++))
+    tests_passed=$((tests_passed + 1))
+    tests_run=$((tests_run + 1))
 }
 
 fail() {
     echo -e "${RED}✖${NC} $1"
-    ((tests_failed++))
-    ((tests_run++))
+    tests_failed=$((tests_failed + 1))
+    tests_run=$((tests_run + 1))
 }
 
 info() {
@@ -78,8 +78,9 @@ test_dry_run_execution() {
 
     # Run installer in dry-run mode with a timeout
     # Use --skip-identity to avoid interactive prompts
+    # Use --force to ensure dry-run output is generated even if modules are complete
     output=$(timeout "${TEST_TIMEOUT}" "${INSTALLER}" \
-        --dry-run --skip-identity 2>&1) || exit_code=$?
+        --dry-run --skip-identity --force 2>&1) || exit_code=$?
 
     # Check exit code
     if [[ ${exit_code} -eq 124 ]]; then

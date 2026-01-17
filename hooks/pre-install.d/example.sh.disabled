@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Example pre-install hook
+# Rename to *.sh and chmod +x to enable
+set -euo pipefail
+
+echo "Pre-install hook running..."
+# Add your custom logic here

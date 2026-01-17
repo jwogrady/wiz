@@ -137,13 +137,13 @@ install_essentials() {
     # Update system if configured
     if is_enabled "UPDATE_SYSTEM"; then
         progress "Updating package cache..."
-        run "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y" || module_fail "Failed to update package cache"
+        pkg_update || module_fail "Failed to update package cache"
     fi
-    
+
     # Upgrade system if configured
     if is_enabled "UPGRADE_SYSTEM"; then
         progress "Upgrading system packages..."
-        run "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold" || warn "System upgrade had issues, continuing..."
+        pkg_upgrade || warn "System upgrade had issues, continuing..."
     fi
     
     # Collect all packages for batch installation (more efficient)
@@ -168,8 +168,7 @@ install_essentials() {
     # Clean up if configured
     if is_enabled "AUTO_CLEAN"; then
         progress "Cleaning package cache..."
-        run "sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y" || warn "Autoremove had issues"
-        run "sudo apt-get clean" || warn "Clean had issues"
+        pkg_clean || warn "Package cleanup had issues"
     fi
     
     return 0
