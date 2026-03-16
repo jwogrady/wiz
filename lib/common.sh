@@ -314,9 +314,11 @@ progress() {
 }
 
 # --- Command Execution ---
-# Two execution modes:
-#   run       - Safe execution, no shell interpretation (preferred)
-#   run_shell - Shell execution with eval (use only when pipes/redirects needed)
+# Three execution modes:
+#   run        - Safe execution, no shell interpretation (preferred); captures output
+#   run_stream - Safe execution, no shell interpretation; streams output to terminal
+#                Use for long-running commands: apt-get, nvm install, npm, etc.
+#   run_shell  - Shell execution with eval; use only when pipes/redirects needed
 #
 # Features:
 # - Dry-run mode support (shows commands without executing)
@@ -401,6 +403,36 @@ run() {
     _run_common_post "$exit_code" "$display_cmd"
 }
 
+# run_stream: Execute command safely, streaming output directly to terminal
+# Usage: run_stream command arg1 arg2 ...
+# Example: run_stream sudo apt-get install -y curl wget
+# Example: run_stream npm config set fund false
+# Use instead of run() for long-running commands where the user should see output.
+# stdout/stderr are passed through; the log file receives EXEC/SUCCESS/ERROR records only.
+# Returns: Exit code of the executed command (or 0 in dry-run mode)
+# NOTE: Does NOT support pipes, redirects, or shell expansions. Use run_shell for those.
+run_stream() {
+    # Build display string (IFS may be set to newline)
+    local display_cmd="${*}"
+    if [[ "$IFS" != $' \t\n' ]]; then
+        display_cmd=""
+        local arg
+        for arg in "$@"; do
+            display_cmd="${display_cmd:+$display_cmd }$arg"
+        done
+    fi
+
+    if _run_common_pre "$display_cmd"; then
+        return 0
+    fi
+
+    # Execute directly — stdout/stderr stream to terminal unchanged
+    local exit_code=0
+    "$@" || exit_code=$?
+
+    _run_common_post "$exit_code" "$display_cmd"
+}
+
 # run_shell: Execute command string with shell interpretation
 # Usage: run_shell "command with pipes | and redirects > file"
 # Example: run_shell "curl -fsSL '$url' | bash"
@@ -428,11 +460,13 @@ run_shell() {
 # --- Environment Detection ---
 
 # detect_os: Detect operating system
+# Reads /etc/os-release with grep rather than sourcing it to avoid polluting
+# the script's namespace with OS variables (NAME, VERSION, ID, etc.).
 detect_os() {
     if [[ -f /etc/os-release ]]; then
-        # shellcheck source=/dev/null
-        source /etc/os-release
-        echo "${ID:-unknown}"
+        local os_id
+        os_id="$(grep -m1 '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"' | tr -d "'")"
+        echo "${os_id:-unknown}"
     else
         echo "unknown"
     fi
@@ -701,19 +735,19 @@ pkg_update() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get update -y
+            run_stream env DEBIAN_FRONTEND=noninteractive sudo apt-get update -y
             ;;
         dnf)
-            run sudo dnf check-update -y || true  # dnf returns 100 if updates available
+            run_stream sudo dnf check-update -y || true  # dnf returns 100 if updates available
             ;;
         yum)
-            run sudo yum check-update -y || true
+            run_stream sudo yum check-update -y || true
             ;;
         pacman)
-            run sudo pacman -Sy --noconfirm
+            run_stream sudo pacman -Sy --noconfirm
             ;;
         brew)
-            run brew update
+            run_stream brew update
             ;;
         *)
             warn "Unknown package manager, skipping update"
@@ -730,21 +764,21 @@ pkg_upgrade() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get upgrade -y \
+            run_stream env DEBIAN_FRONTEND=noninteractive sudo apt-get upgrade -y \
                 -o Dpkg::Options::=--force-confdef \
                 -o Dpkg::Options::=--force-confold
             ;;
         dnf)
-            run sudo dnf upgrade -y
+            run_stream sudo dnf upgrade -y
             ;;
         yum)
-            run sudo yum upgrade -y
+            run_stream sudo yum upgrade -y
             ;;
         pacman)
-            run sudo pacman -Syu --noconfirm
+            run_stream sudo pacman -Syu --noconfirm
             ;;
         brew)
-            run brew upgrade
+            run_stream brew upgrade
             ;;
         *)
             warn "Unknown package manager, skipping upgrade"
@@ -761,24 +795,30 @@ pkg_clean() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get autoremove -y || true
-            run sudo apt-get clean || true
+            run_stream env DEBIAN_FRONTEND=noninteractive sudo apt-get autoremove -y || true
+            run_stream sudo apt-get clean || true
             ;;
         dnf)
-            run sudo dnf autoremove -y || true
-            run sudo dnf clean all || true
+            run_stream sudo dnf autoremove -y || true
+            run_stream sudo dnf clean all || true
             ;;
         yum)
-            run sudo yum autoremove -y || true
-            run sudo yum clean all || true
+            run_stream sudo yum autoremove -y || true
+            run_stream sudo yum clean all || true
             ;;
         pacman)
-            # Remove orphaned packages
-            run sudo pacman -Rns "$(pacman -Qdtq)" --noconfirm 2>/dev/null || true
-            run sudo pacman -Sc --noconfirm || true
+            # Remove orphaned packages only when there are some to remove.
+            # pacman -Qdtq returns empty output (not an error) when no orphans exist;
+            # passing an empty string to pacman -Rns is an error, so we must guard.
+            local orphans
+            mapfile -t orphans < <(pacman -Qdtq 2>/dev/null)
+            if [[ ${#orphans[@]} -gt 0 ]]; then
+                run_stream sudo pacman -Rns --noconfirm "${orphans[@]}" || true
+            fi
+            run_stream sudo pacman -Sc --noconfirm || true
             ;;
         brew)
-            run brew cleanup || true
+            run_stream brew cleanup || true
             ;;
         *)
             warn "Unknown package manager, skipping cleanup"
@@ -803,7 +843,7 @@ install_package() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive \
+            run_stream env DEBIAN_FRONTEND=noninteractive \
                 DEBCONF_NONINTERACTIVE_SEEN=true \
                 sudo -E apt-get install -y \
                 -o Dpkg::Options::=--force-confdef \
@@ -812,16 +852,16 @@ install_package() {
                 "$pkg"
             ;;
         dnf)
-            run sudo dnf install -y "$pkg"
+            run_stream sudo dnf install -y "$pkg"
             ;;
         yum)
-            run sudo yum install -y "$pkg"
+            run_stream sudo yum install -y "$pkg"
             ;;
         pacman)
-            run sudo pacman -S --noconfirm "$pkg"
+            run_stream sudo pacman -S --noconfirm "$pkg"
             ;;
         brew)
-            run brew install "$pkg"
+            run_stream brew install "$pkg"
             ;;
         *)
             error "Unknown package manager: $pkg_mgr"
@@ -853,7 +893,7 @@ install_packages() {
 
     case "$pkg_mgr" in
         apt)
-            run env DEBIAN_FRONTEND=noninteractive \
+            run_stream env DEBIAN_FRONTEND=noninteractive \
                 DEBCONF_NONINTERACTIVE_SEEN=true \
                 sudo -E apt-get install -y \
                 -o Dpkg::Options::=--force-confdef \
@@ -862,16 +902,16 @@ install_packages() {
                 "${to_install[@]}"
             ;;
         dnf)
-            run sudo dnf install -y "${to_install[@]}"
+            run_stream sudo dnf install -y "${to_install[@]}"
             ;;
         yum)
-            run sudo yum install -y "${to_install[@]}"
+            run_stream sudo yum install -y "${to_install[@]}"
             ;;
         pacman)
-            run sudo pacman -S --noconfirm "${to_install[@]}"
+            run_stream sudo pacman -S --noconfirm "${to_install[@]}"
             ;;
         brew)
-            run brew install "${to_install[@]}"
+            run_stream brew install "${to_install[@]}"
             ;;
         *)
             error "Unknown package manager: $pkg_mgr"
@@ -899,7 +939,16 @@ progress_bar() {
     local total=$2
     local desc="${3:-}"
     local start_time="${4:-}"
+
+    # Guard: zero total would cause division-by-zero under set -e
+    if [[ $total -eq 0 ]]; then
+        return 0
+    fi
+
     local percent=$((current * 100 / total))
+    # Clamp percent to [0,100] in case current > total
+    [[ $percent -gt 100 ]] && percent=100
+    [[ $percent -lt 0 ]]   && percent=0
     local filled=$((percent / 2))
     local empty=$((50 - filled))
     
@@ -1360,7 +1409,7 @@ run_hook_if_exists() {
 export -f wiz_config_get wiz_config_set wiz_is_dry_run wiz_is_verbose wiz_is_force
 export -f run_hooks run_hook_if_exists
 export -f timestamp log warn error success debug progress
-export -f run run_shell _run_common_pre _run_common_post
+export -f run run_stream run_shell _run_common_pre _run_common_post
 export -f atomic_write backup_file append_to_file_once
 export -f command_exists detect_pkg_manager package_installed
 export -f pkg_update pkg_upgrade pkg_clean

@@ -76,12 +76,6 @@ install_bun() {
     # Install via official installer
     progress "Downloading Bun installer..."
 
-    # The official installer respects the BUN_VERSION env var
-    local bun_install_env=""
-    if [[ "$bun_target" != "latest" ]]; then
-        bun_install_env="BUN_VERSION=${bun_target} "
-    fi
-
     # Download installer to temp file, then execute — avoids partial execution
     # on interrupted downloads. Bun does not publish a checksum for install.sh,
     # so we skip SHA verification and warn the user.
@@ -96,10 +90,19 @@ install_bun() {
         log "[DRY-RUN] Would execute Bun installer: ${bun_tmp}"
         rm -f "$bun_tmp"
     else
-        run_shell "${bun_install_env}bash '${bun_tmp}'" || {
-            rm -f "$bun_tmp"
-            module_fail "Bun installation failed"
-        }
+        # Pass BUN_VERSION via env(1) so version string is never interpolated into
+        # a shell command string — safe regardless of special characters in the value.
+        if [[ "$bun_target" != "latest" ]]; then
+            run_stream env BUN_VERSION="$bun_target" bash "$bun_tmp" || {
+                rm -f "$bun_tmp"
+                module_fail "Bun installation failed"
+            }
+        else
+            run_stream bash "$bun_tmp" || {
+                rm -f "$bun_tmp"
+                module_fail "Bun installation failed"
+            }
+        fi
         rm -f "$bun_tmp"
     fi
     

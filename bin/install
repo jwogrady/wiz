@@ -274,8 +274,7 @@ init_config() {
     # Note: .env is loaded in main() for Phase 2 (identity setup), but this function
     # is for Phase 1 (module installation) initialization, so .env may not exist yet
     if [[ -f "${WIZ_ROOT}/.env" ]]; then
-        # shellcheck source=/dev/null
-        source "${WIZ_ROOT}/.env"
+        _load_env "${WIZ_ROOT}/.env"
         debug "Loaded configuration from .env"
     fi
     
@@ -592,8 +591,7 @@ main() {
         
         # Load .env early if it exists (may contain WIN_USER from bootstrap)
         if [[ -f "${WIZ_ROOT}/.env" ]]; then
-            # shellcheck source=/dev/null
-            source "${WIZ_ROOT}/.env"
+            _load_env "${WIZ_ROOT}/.env"
             debug "Loaded existing .env configuration"
         fi
         

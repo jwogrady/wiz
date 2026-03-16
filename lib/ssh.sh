@@ -272,6 +272,12 @@ configure_ssh_agent() {
     local zshrc="${HOME}/.zshrc"
     local bashrc="${HOME}/.bashrc"
 
+    # Track all temp files created in this function so they are removed on any
+    # exit path (normal return, error, or signal).
+    local _ssh_agent_tmp_files=()
+    _ssh_agent_cleanup() { rm -f "${_ssh_agent_tmp_files[@]}" 2>/dev/null || true; }
+    trap '_ssh_agent_cleanup' RETURN ERR
+
     local ssh_agent_config
     ssh_agent_config=$(cat << 'SSH_CONFIG_EOF'
 # --- Wiz SSH Agent Configuration ---
@@ -317,8 +323,9 @@ SSH_CONFIG_EOF
                 "$bashrc"
         fi
         local tmp_bashrc
-        tmp_bashrc=$(mktemp) && \
-            { echo "$ssh_agent_config"; cat "$bashrc"; } > "$tmp_bashrc" && \
+        tmp_bashrc=$(mktemp)
+        _ssh_agent_tmp_files+=("$tmp_bashrc")
+        { echo "$ssh_agent_config"; cat "$bashrc"; } > "$tmp_bashrc" && \
             mv "$tmp_bashrc" "$bashrc"
         debug "SSH agent config added to .bashrc"
     fi
@@ -338,6 +345,7 @@ SSH_CONFIG_EOF
             if [[ -n "$plugins_line" ]]; then
                 local tmp_insert tmp_zshrc
                 if tmp_insert=$(mktemp) && tmp_zshrc=$(mktemp); then
+                    _ssh_agent_tmp_files+=("$tmp_insert" "$tmp_zshrc")
                     echo "$ssh_agent_config" > "$tmp_insert"
                     awk -v line="$plugins_line" -v tmpfile="$tmp_insert" '
                         NR == line { print; while ((getline < tmpfile) > 0) print; close(tmpfile); next }
@@ -351,8 +359,9 @@ SSH_CONFIG_EOF
 
         if [[ $inserted -eq 0 ]]; then
             local tmp_zshrc_fallback
-            tmp_zshrc_fallback=$(mktemp) && \
-                { echo "$ssh_agent_config"; cat "$zshrc"; } > "$tmp_zshrc_fallback" && \
+            tmp_zshrc_fallback=$(mktemp)
+            _ssh_agent_tmp_files+=("$tmp_zshrc_fallback")
+            { echo "$ssh_agent_config"; cat "$zshrc"; } > "$tmp_zshrc_fallback" && \
                 mv "$tmp_zshrc_fallback" "$zshrc"
         fi
         debug "SSH agent config added to .zshrc"

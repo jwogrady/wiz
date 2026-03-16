@@ -37,6 +37,31 @@ validate_env() {
     return 0
 }
 
+# _load_env: Parse .env key=value pairs without sourcing (no code execution)
+# Usage: _load_env <envfile>
+# Populates GIT_NAME, GIT_EMAIL, GITHUB_USERNAME, WIN_USER from the file.
+# Only accepts lines matching ^KEY="value" or ^KEY=value; ignores comments/blanks.
+_load_env() {
+    local envfile="$1"
+
+    local _val
+    _val="$(grep -m1 '^GIT_NAME=' "$envfile" 2>/dev/null \
+        | sed 's/^GIT_NAME=//; s/^"//; s/"$//')"
+    [[ -n "$_val" ]] && GIT_NAME="$_val"
+
+    _val="$(grep -m1 '^GIT_EMAIL=' "$envfile" 2>/dev/null \
+        | sed 's/^GIT_EMAIL=//; s/^"//; s/"$//')"
+    [[ -n "$_val" ]] && GIT_EMAIL="$_val"
+
+    _val="$(grep -m1 '^GITHUB_USERNAME=' "$envfile" 2>/dev/null \
+        | sed 's/^GITHUB_USERNAME=//; s/^"//; s/"$//')"
+    [[ -n "$_val" ]] && GITHUB_USERNAME="$_val"
+
+    _val="$(grep -m1 '^WIN_USER=' "$envfile" 2>/dev/null \
+        | sed 's/^WIN_USER=//; s/^"//; s/"$//')"
+    [[ -n "$_val" ]] && WIN_USER="$_val"
+}
+
 # validate_git_name: Validate Git name format
 # Usage: validate_git_name <name>
 # Security: Rejects shell metacharacters to prevent injection when written to .env
@@ -98,8 +123,7 @@ write_env() {
     if [[ -f "$envfile" ]] && [[ $FORCE -eq 0 ]]; then
         if validate_env "$envfile"; then
             log "Loading existing configuration from .env"
-            # shellcheck source=/dev/null
-            source "$envfile"
+            _load_env "$envfile"
             return 0
         else
             warn "Existing .env appears invalid, recreating..."
@@ -165,9 +189,8 @@ EOF
 
     success "Configuration saved to .env (mode 0600)"
 
-    # Source the file we just created
-    # shellcheck source=/dev/null
-    source "$envfile"
+    # Load the file we just created (parse, not source — no code execution)
+    _load_env "$envfile"
 }
 
 # ==============================================================================
