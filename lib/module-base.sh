@@ -229,7 +229,7 @@ verify_dependencies() {
     for module in "${!MODULE_DEPS_MAP[@]}"; do
         local deps="${MODULE_DEPS_MAP[$module]}"
 
-        [[ -z "$deps" ]] || [[ "$deps" == "ALL" ]] && continue
+        { [[ -z "$deps" ]] || [[ "$deps" == "ALL" ]]; } && continue
 
         for dep in $deps; do
             if [[ ! -v MODULE_DEPS_MAP[$dep] ]]; then
