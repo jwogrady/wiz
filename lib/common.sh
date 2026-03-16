@@ -196,6 +196,17 @@ mkdir -p "$WIZ_LOG_DIR"
 mkdir -p "$WIZ_SSH_FINGERPRINT_CACHE_DIR"
 mkdir -p "$WIZ_STATE_DIR"
 
+# Open a persistent append-mode file descriptor for the log file.
+# Uses {varname}>> (Bash 4.1+) so the shell selects an unused FD.
+# All _write_log calls write to this FD instead of re-opening the file on
+# every message.  The guard prevents duplicate opens when common.sh is
+# re-sourced in a subshell that already inherited the FD.
+if [[ -z "${_WIZ_LOG_FD:-}" ]]; then
+    exec {_WIZ_LOG_FD}>>"$LOG_FILE"
+    export _WIZ_LOG_FD
+    trap 'exec {_WIZ_LOG_FD}>&-' EXIT
+fi
+
 # --- Logging Functions ---
 # All logging functions write to both stdout/stderr (for user visibility) and
 # the log file (for troubleshooting). Log levels control verbosity:
@@ -215,7 +226,11 @@ timestamp() {
 _write_log() {
     local level="$1"
     shift
-    echo "[$(timestamp)] [$level] $*" >> "$LOG_FILE"
+    if [[ -n "${_WIZ_LOG_FD:-}" ]]; then
+        echo "[$(timestamp)] [$level] $*" >&"$_WIZ_LOG_FD"
+    else
+        echo "[$(timestamp)] [$level] $*" >> "$LOG_FILE"
+    fi
 }
 
 # debug: Debug-level log (dim cyan) - level 0
@@ -1428,7 +1443,7 @@ run_hook_if_exists() {
 # --- Export Functions ---
 export -f wiz_config_get wiz_config_set wiz_is_dry_run wiz_is_verbose wiz_is_force
 export -f run_hooks run_hook_if_exists
-export -f timestamp log warn error success debug progress
+export -f timestamp log warn error success debug progress _write_log
 export -f run run_stream run_shell _run_common_pre _run_common_post
 export -f atomic_write backup_file append_to_file_once
 export -f command_exists detect_pkg_manager package_installed
