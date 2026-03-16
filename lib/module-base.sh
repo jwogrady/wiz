@@ -36,6 +36,9 @@
 set -euo pipefail
 
 # --- Ensure common.sh is sourced ---
+# SCRIPT_DIR is intentionally left as a global here — it is set only when this
+# file is sourced before common.sh (unusual path).  Module files use the same
+# pattern to bootstrap their source chain.
 if ! declare -f log >/dev/null 2>&1; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh

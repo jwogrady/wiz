@@ -2,10 +2,15 @@
 # ==============================================================================
 # Wiz - Terminal Magic: Identity Library
 # ==============================================================================
-# Git identity configuration: validation, .env management, and git setup.
+# Git identity configuration: input validation, .env file management, and
+# global git config (user.name, user.email, .gitignore_global).
 #
-# Depends on globals set by bin/install:
-#   $WIZ_ROOT, $GIT_NAME, $GIT_EMAIL, $GITHUB_USERNAME, $WIN_USER, $FORCE
+# Runtime globals expected from bin/install:
+#   GIT_NAME             - Full name for git config user.name
+#   GIT_EMAIL            - Email for git config user.email
+#   GITHUB_USERNAME      - GitHub handle written to .env
+#   WIN_USER             - Windows username (used by ssh.sh for key import)
+#   FORCE                - Compat alias for WIZ_FORCE_REINSTALL (1 = overwrite .env)
 #
 # Usage:
 #   source /path/to/lib/identity.sh
@@ -16,6 +21,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # --- Ensure common.sh is sourced ---
+# SCRIPT_DIR is intentionally left as a global here — it is set only when this
+# file is sourced before common.sh (unusual path).
 if ! declare -f log >/dev/null 2>&1; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh

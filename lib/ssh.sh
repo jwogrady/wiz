@@ -2,10 +2,13 @@
 # ==============================================================================
 # Wiz - Terminal Magic: SSH Library
 # ==============================================================================
-# SSH key import, agent configuration, and session key loading.
+# SSH key import, agent configuration, archive extraction, and fingerprint caching.
 #
-# Depends on globals set by bin/install:
-#   $KEYS_PATH, $WIN_USER, $GIT_EMAIL, $FORCE
+# Runtime globals expected from bin/install:
+#   KEYS_PATH            - Explicit archive path (may be empty)
+#   WIN_USER             - Windows username for cross-platform key import
+#   GIT_EMAIL            - Email for ssh-keygen -C when generating a new key
+#   FORCE                - Compat alias for WIZ_FORCE_REINSTALL (1 = overwrite)
 #
 # Usage:
 #   source /path/to/lib/ssh.sh
@@ -16,6 +19,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # --- Ensure common.sh is sourced ---
+# SCRIPT_DIR is intentionally left as a global here — it is set only when this
+# file is sourced before common.sh (unusual path), and common.sh will overwrite
+# the WIZ_ROOT readonly once it runs.
 if ! declare -f log >/dev/null 2>&1; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh

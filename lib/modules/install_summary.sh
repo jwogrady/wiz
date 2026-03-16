@@ -11,9 +11,8 @@
 #
 # Dependencies: ALL (runs after all other modules)
 #
-# Usage:
-#   ./install_summary.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 

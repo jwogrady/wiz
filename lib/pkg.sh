@@ -5,8 +5,11 @@
 # Cross-platform package manager detection and installation helpers.
 # Supports: apt (Debian/Ubuntu), dnf/yum (Fedora/RHEL), pacman (Arch), brew (macOS)
 #
-# Usage:
-#   source /path/to/lib/pkg.sh
+# Normal usage: sourced transitively by lib/common.sh — callers need only:
+#   source /path/to/lib/common.sh
+#
+# Standalone (direct) usage:
+#   source /path/to/lib/pkg.sh   # guard below bootstraps common.sh if needed
 #
 # Functions:
 #   - detect_pkg_manager  (cached: apt | dnf | yum | pacman | brew | unknown)
@@ -22,9 +25,13 @@
 set -euo pipefail
 
 # --- Ensure common.sh is sourced ---
+# Defensive guard: only fires when this file is sourced directly (outside the
+# normal common.sh chain).  Do NOT use WIZ_ROOT:= here — common.sh derives
+# WIZ_ROOT from its own BASH_SOURCE location (lib/../); assigning it to the
+# lib/ directory here would misconfigure all WIZ_*_DIR paths.
 if ! declare -f log >/dev/null 2>&1; then
     # shellcheck source=common.sh
-    source "${WIZ_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/common.sh"
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 fi
 
 # Cache the detected package manager to avoid repeated detection

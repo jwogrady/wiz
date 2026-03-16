@@ -623,7 +623,10 @@ command_exists() {
 }
 
 # --- Sub-libraries ---
-# Source specialized libraries now that core common.sh functions are available.
+# These three files are sourced here rather than at the top of the file because
+# they call log(), command_exists(), run(), and run_stream() — all of which must
+# be defined before the source statements execute.
+# DO NOT move these source calls above the logging or run-execution sections.
 # shellcheck source=pkg.sh
 source "${WIZ_ROOT}/lib/pkg.sh"
 # shellcheck source=download.sh

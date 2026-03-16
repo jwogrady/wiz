@@ -12,9 +12,8 @@
 #
 # Dependencies: zsh (for optimal experience)
 #
-# Usage:
-#   ./install_starship.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 

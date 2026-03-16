@@ -4,8 +4,11 @@
 # ==============================================================================
 # SHA-256 verification, curl/wget download with fallback, and version detection.
 #
-# Usage:
-#   source /path/to/lib/download.sh
+# Normal usage: sourced transitively by lib/common.sh — callers need only:
+#   source /path/to/lib/common.sh
+#
+# Standalone (direct) usage:
+#   source /path/to/lib/download.sh   # guard below bootstraps common.sh if needed
 #
 # Functions:
 #   - verify_sha256          <file> <expected_hex>
@@ -18,9 +21,12 @@
 set -euo pipefail
 
 # --- Ensure common.sh is sourced ---
+# Defensive guard: only fires when this file is sourced directly (outside the
+# normal common.sh chain).  Do NOT use WIZ_ROOT:= here — see pkg.sh for
+# explanation of why that would misconfigure WIZ_ROOT.
 if ! declare -f log >/dev/null 2>&1; then
     # shellcheck source=common.sh
-    source "${WIZ_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/common.sh"
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 fi
 
 # verify_sha256: Compare a file's SHA-256 digest against an expected value

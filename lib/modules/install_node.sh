@@ -13,9 +13,8 @@
 #
 # Dependencies: essentials (for curl, wget, build-essential)
 #
-# Usage:
-#   ./install_node.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 

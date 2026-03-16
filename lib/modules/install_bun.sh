@@ -12,9 +12,8 @@
 #
 # Dependencies: essentials (for curl/wget)
 #
-# Usage:
-#   ./install_bun.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 

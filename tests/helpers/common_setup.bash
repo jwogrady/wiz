@@ -36,7 +36,8 @@ _common_setup() {
     export WIZ_FORCE_REINSTALL=0
     export WIZ_STOP_ON_ERROR=1
 
-    # Compat aliases expected by some code paths
+    # Compat aliases — still referenced by run/_run_common_pre and ssh.sh/identity.sh
+    # until WIZ_FORCE_REINSTALL fully replaces FORCE everywhere.
     export LOG_DIR="$WIZ_LOG_DIR"
     export LOG_FILE="$WIZ_LOG_FILE"
     export DRY_RUN=0
