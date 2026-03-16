@@ -25,7 +25,6 @@
 #   --github=USER     Set GitHub username
 #   --win-user=USER   Set Windows username for SSH key import (auto-detected if not provided)
 #   --keys-path=PATH  Provide SSH key archive manually
-#   --skip-prompt     Skip interactive continuation prompt (deprecated)
 #   --skip-identity   Skip identity setup, only install modules
 #   --skip-modules    Skip module installation, only setup identity
 #   --module=NAME     Install only specific module(s) (comma-separated)
@@ -71,7 +70,6 @@ source "${WIZ_ROOT}/lib/ssh.sh"
 DRY_RUN="${WIZ_DRY_RUN:-0}"
 FORCE="${WIZ_FORCE_REINSTALL:-0}"
 DEBUG=0
-SKIP_PROMPT=1
 SKIP_IDENTITY=0
 SKIP_MODULES=0
 KEYS_PATH=""
@@ -185,8 +183,7 @@ parse_args() {
                 SKIP_MODULES=1
             ;;
             "--skip-prompt")
-                SKIP_PROMPT=1
-                warn "--skip-prompt is deprecated, modules install automatically now"
+                warn "--skip-prompt is deprecated and has no effect"
             ;;
             "--name="*)
                 GIT_NAME="${1#*=}"
@@ -232,11 +229,6 @@ parse_args() {
         esac
         shift
     done
-
-    # Enable debug mode if requested
-    if [[ $DEBUG -eq 1 ]]; then
-        set -x
-    fi
 
     return 0
 }
@@ -453,7 +445,6 @@ run_module_installation() {
     echo ""
     
     init_config
-    mkdir -p "$WIZ_STATE_DIR"
 
     if [[ ${#DEFAULT_MODULES[@]} -eq 0 ]]; then
         error "No modules found in ${MODULES_DIR}"
