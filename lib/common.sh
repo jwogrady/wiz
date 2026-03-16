@@ -884,11 +884,25 @@ install_packages() {
     local pkg_mgr
     pkg_mgr=$(detect_pkg_manager)
 
-    for pkg in "${packages[@]}"; do
-        if ! package_installed "$pkg"; then
-            to_install+=("$pkg")
-        fi
-    done
+    # For apt: one dpkg-query invocation covers all packages instead of N
+    # individual dpkg -l calls.  For other managers the per-package loop is fine.
+    if [[ "$pkg_mgr" == "apt" ]] && [[ ${#packages[@]} -gt 0 ]]; then
+        local -A _apt_installed=()
+        local _pkg
+        while IFS= read -r _pkg; do
+            [[ -n "$_pkg" ]] && _apt_installed["$_pkg"]=1
+        done < <(dpkg-query -W -f='${Status}\t${Package}\n' "${packages[@]}" 2>/dev/null \
+            | awk -F'\t' '$1=="install ok installed" {print $2}')
+        for pkg in "${packages[@]}"; do
+            [[ -z "${_apt_installed[$pkg]+x}" ]] && to_install+=("$pkg")
+        done
+    else
+        for pkg in "${packages[@]}"; do
+            if ! package_installed "$pkg"; then
+                to_install+=("$pkg")
+            fi
+        done
+    fi
 
     if [[ ${#to_install[@]} -eq 0 ]]; then
         debug "All packages already installed"
