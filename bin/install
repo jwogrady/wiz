@@ -25,7 +25,6 @@
 #   --github=USER     Set GitHub username
 #   --win-user=USER   Set Windows username for SSH key import (auto-detected if not provided)
 #   --keys-path=PATH  Provide SSH key archive manually
-#   --skip-prompt     Skip interactive continuation prompt (deprecated)
 #   --skip-identity   Skip identity setup, only install modules
 #   --skip-modules    Skip module installation, only setup identity
 #   --module=NAME     Install only specific module(s) (comma-separated)
@@ -56,6 +55,10 @@ export WIZ_ROOT
 
 # shellcheck source=lib/module-base.sh
 source "${WIZ_ROOT}/lib/module-base.sh"
+# shellcheck source=lib/identity.sh
+source "${WIZ_ROOT}/lib/identity.sh"
+# shellcheck source=lib/ssh.sh
+source "${WIZ_ROOT}/lib/ssh.sh"
 
 # Ensure color variables are available (defensive fallback)
 # These should be set by common.sh, but provide fallbacks if not
@@ -67,7 +70,6 @@ source "${WIZ_ROOT}/lib/module-base.sh"
 DRY_RUN="${WIZ_DRY_RUN:-0}"
 FORCE="${WIZ_FORCE_REINSTALL:-0}"
 DEBUG=0
-SKIP_PROMPT=1
 SKIP_IDENTITY=0
 SKIP_MODULES=0
 KEYS_PATH=""
@@ -75,25 +77,6 @@ GIT_NAME=""
 GIT_EMAIL=""
 GITHUB_USERNAME=""
 WIN_USER=""
-
-# Module configuration
-MODULES_DIR="${WIZ_ROOT}/lib/modules"
-DISABLED_MODULES=()
-REQUESTED_MODULES=()
-DEFAULT_MODULES=(
-    essentials
-    zsh
-    starship
-    node
-    bun
-    neovim
-    summary
-)
-
-# Statistics (local to this script)
-MODULES_COMPLETED=0
-MODULES_FAILED=0
-MODULES_SKIPPED=0
 
 # --- Help Message ---
 show_help() {
@@ -120,6 +103,9 @@ Options:
   --github=USER       Set GitHub username (skips prompt)
   --win-user=USER     Set Windows username for SSH key import
   --keys-path=PATH    Provide SSH key archive manually
+  --node-version=VER  Override Node.js version (default: LTS)
+  --bun-version=VER   Override Bun version (default: latest)
+  --starship-version=VER  Override Starship version (default: latest)
   --module=NAME       Install only specific module(s) (comma-separated)
   --skip=NAME         Skip specific module(s) (comma-separated)
   --list              List all available modules
@@ -185,8 +171,7 @@ parse_args() {
                 SKIP_MODULES=1
             ;;
             "--skip-prompt")
-                SKIP_PROMPT=1
-                warn "--skip-prompt is deprecated, modules install automatically now"
+                warn "--skip-prompt is deprecated and has no effect"
             ;;
             "--name="*)
                 GIT_NAME="${1#*=}"
@@ -202,6 +187,15 @@ parse_args() {
             ;;
             "--keys-path="*)
                 KEYS_PATH="${1#*=}"
+            ;;
+            "--node-version="*)
+                wiz_config_set "node_version" "${1#*=}"
+            ;;
+            "--bun-version="*)
+                wiz_config_set "bun_version" "${1#*=}"
+            ;;
+            "--starship-version="*)
+                wiz_config_set "starship_version" "${1#*=}"
             ;;
             "--module="*)
                 IFS=',' read -ra REQUESTED_MODULES <<< "${1#*=}"
@@ -224,11 +218,6 @@ parse_args() {
         shift
     done
 
-    # Enable debug mode if requested
-    if [[ $DEBUG -eq 1 ]]; then
-        set -x
-    fi
-
     return 0
 }
 
@@ -250,863 +239,27 @@ check_requirements() {
     fi
 }
 
-# --- Environment File Management ---
-
-# validate_env: Ensure .env file has valid lines
-validate_env() {
-    local envfile="$1"
-    
-    if ! grep -q '^GIT_NAME=' "$envfile" 2>/dev/null; then
-        return 1
-    fi
-    
-    return 0
-}
-
-# validate_git_name: Validate Git name format
-# Usage: validate_git_name <name>
-# Security: Rejects shell metacharacters to prevent injection when written to .env
-validate_git_name() {
-    local name="$1"
-
-    # Name must not be empty or only whitespace
-    [[ -n "${name// }" ]] || return 1
-
-    # Name should be at least 2 characters
-    [[ ${#name} -ge 2 ]] || return 1
-
-    # Name should not contain only special characters
-    [[ "$name" =~ [[:alnum:]] ]] || return 1
-
-    # Security: Reject shell metacharacters that could cause injection
-    # Allowed: letters, numbers, spaces, hyphens, apostrophes, periods
-    # Rejected: backticks, $, ", \, newlines, etc.
-    [[ "$name" =~ ^[a-zA-Z0-9\ \'\.\-]+$ ]] || return 1
-
-    return 0
-}
-
-# validate_email: Validate email format
-# Usage: validate_email <email>
-validate_email() {
-    local email="$1"
-    
-    # Basic email format validation
-    # Must contain @ and at least one character before and after
-    [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || return 1
-    
-    return 0
-}
-
-# validate_github_username: Validate GitHub username format
-# Usage: validate_github_username <username>
-validate_github_username() {
-    local username="$1"
-    
-    # GitHub usernames can only contain alphanumeric characters and hyphens
-    # Cannot start or end with a hyphen
-    # Must be between 1 and 39 characters
-    # Cannot contain consecutive hyphens
-    [[ ${#username} -ge 1 ]] && [[ ${#username} -le 39 ]] || return 1
-    
-    # Single character: must be alphanumeric
-    if [[ ${#username} -eq 1 ]]; then
-        [[ "$username" =~ ^[a-zA-Z0-9]$ ]] || return 1
-    else
-        # Multiple characters: start and end with alphanumeric, middle can have hyphens
-        [[ "$username" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$ ]] || return 1
-        # Check for consecutive hyphens
-        [[ ! "$username" =~ -- ]] || return 1
-    fi
-    
-    return 0
-}
-
-# write_env: Interactive environment setup
-write_env() {
-    local envfile="${WIZ_ROOT}/.env"
-    
-    # Load existing .env if present and not forcing
-    if [[ -f "$envfile" ]] && [[ $FORCE -eq 0 ]]; then
-        if validate_env "$envfile"; then
-            log "Loading existing configuration from .env"
-            # shellcheck source=/dev/null
-            source "$envfile"
-            return 0
-        else
-            warn "Existing .env appears invalid, recreating..."
-        fi
-    fi
-    
-    # Interactive prompts if values not provided via CLI
-    if [[ -z "$GIT_NAME" ]]; then
-        read -rp "Enter your full name (for Git commits): " GIT_NAME
-    fi
-    
-    if [[ -z "$GIT_EMAIL" ]]; then
-        read -rp "Enter your email (for Git commits): " GIT_EMAIL
-    fi
-    
-    if [[ -z "$GITHUB_USERNAME" ]]; then
-        read -rp "Enter your GitHub username: " GITHUB_USERNAME
-    fi
-    
-    # Auto-detect Windows username if not provided (no prompt needed)
-    if [[ -z "$WIN_USER" ]]; then
-        WIN_USER="$(detect_windows_user 2>/dev/null || echo "")"
-        if [[ -n "$WIN_USER" ]]; then
-            debug "Auto-detected Windows username: $WIN_USER"
-        fi
-    fi
-    
-    # Validate inputs
-    if [[ -z "$GIT_NAME" ]] || [[ -z "$GIT_EMAIL" ]] || [[ -z "$GITHUB_USERNAME" ]]; then
-        error "Name, email, and GitHub username are required"
-        exit 1
-    fi
-    
-    # Validate format
-    if ! validate_git_name "$GIT_NAME"; then
-        error "Invalid name format. Please enter your full name."
-        exit 1
-    fi
-    
-    if ! validate_email "$GIT_EMAIL"; then
-        error "Invalid email format. Please enter a valid email address."
-        exit 1
-    fi
-    
-    if ! validate_github_username "$GITHUB_USERNAME"; then
-        error "Invalid GitHub username format. Username must contain only alphanumeric characters and hyphens."
-        exit 1
-    fi
-    
-    # Write .env file with restricted permissions (contains user info)
-    log "Writing configuration to .env..."
-
-    # Create with mode 0600 (owner read/write only) using umask
-    ( umask 077 && cat > "$envfile" << EOF
-# Wiz Configuration
-# Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-GIT_NAME="$GIT_NAME"
-GIT_EMAIL="$GIT_EMAIL"
-GITHUB_USERNAME="$GITHUB_USERNAME"
-WIN_USER="$WIN_USER"
-EOF
-    )
-
-    success "Configuration saved to .env (mode 0600)"
-    
-    # Source the file we just created
-    # shellcheck source=/dev/null
-    source "$envfile"
-}
-
-# --- Git Configuration ---
-
-configure_git() {
-    log "Configuring Git..."
-    
-    # Set global Git identity
-    run git config --global user.name "$GIT_NAME"
-    run git config --global user.email "$GIT_EMAIL"
-
-    # Set useful Git defaults
-    run git config --global init.defaultBranch main
-    run git config --global pull.rebase false
-    run git config --global core.autocrlf input
-    
-    # Create global .gitignore
-    local gitignore="${HOME}/.gitignore_global"
-    
-    if [[ ! -f "$gitignore" ]] || [[ $FORCE -eq 1 ]]; then
-        log "Creating global .gitignore..."
-        
-        cat > "$gitignore" << 'EOF'
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Editor files
-*.swp
-*.swo
-*~
-.vscode/
-.idea/
-
-# Environment
-.env
-.env.local
-
-# Node
-node_modules/
-npm-debug.log*
-
-# Python
-__pycache__/
-*.py[cod]
-venv/
-.python-version
-EOF
-        
-        run git config --global core.excludesfile "$gitignore"
-        success "Global .gitignore created"
-    else
-        debug "Global .gitignore already exists"
-    fi
-    
-    success "Git configured for: $GIT_NAME <$GIT_EMAIL>"
-}
-
-# --- SSH Key Management ---
-
-# has_ssh_keys: Check if SSH keys exist (cached result)
-has_ssh_keys() {
-    local ssh_dir="${1:-${HOME}/.ssh}"
-    [[ -d "$ssh_dir" ]] || return 1
-    
-    # Quick check for any private key file
-    for key in "$ssh_dir"/*; do
-        [[ -f "$key" ]] || continue
-        [[ "$key" == *.pub ]] && continue
-        [[ "$key" == *known_hosts* ]] && continue
-        [[ "$key" == *config* ]] && continue
-        return 0
-    done
-    
-    return 1
-}
-
-# load_ssh_keys_to_agent: Load all SSH keys into the agent
-# Only prompts for passphrase if keys aren't already loaded
-load_ssh_keys_to_agent() {
-    local ssh_dir="${HOME}/.ssh"
-    [[ -d "$ssh_dir" ]] || return 0
-    
-    if ! command_exists ssh-agent || ! command_exists ssh-add; then
-        return 0
-    fi
-    
-    # Start agent if not running
-    if [[ -z "${SSH_AUTH_SOCK:-}" ]] || ! ssh-add -l >/dev/null 2>&1; then
-        eval "$(ssh-agent -s)" >/dev/null 2>&1 || return 0
-        # Export SSH agent variables so they persist in the current shell
-        export SSH_AUTH_SOCK SSH_AGENT_PID
-    fi
-    
-    # Get list of already-loaded keys (fingerprints)
-    local loaded_fingerprints
-    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}' || echo "")
-    
-    # Add all private keys to the agent (including named keys like id_vultr, id_jwogrady)
-    local keys_loaded=0
-    local keys_skipped=0
-    for key in "$ssh_dir"/*; do
-        [[ -f "$key" ]] || continue
-        [[ "$key" == *.pub ]] && continue
-        [[ "$key" == *known_hosts* ]] && continue
-        [[ "$key" == *config* ]] && continue
-        
-        # Check if key is already loaded by comparing fingerprints
-        # Use cached fingerprint for better performance
-        local key_fingerprint
-        if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
-            key_fingerprint=$(get_cached_ssh_fingerprint "$key")
-        else
-            # Fallback to direct call if caching function not available
-            key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
-        fi
-        
-        if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
-            debug "SSH key already loaded: $(basename "$key")"
-            keys_skipped=$((keys_skipped + 1))
-            continue
-        fi
-        
-        # Try to add key (will prompt for password if needed)
-        # Redirect stdin from /dev/tty to allow passphrase entry if needed
-        if [[ -t 0 ]] && [[ -t 1 ]]; then
-            # Interactive terminal - allow passphrase prompt
-            if ssh-add "$key" 2>/dev/null; then
-                keys_loaded=$((keys_loaded + 1))
-            else
-                debug "Failed to add SSH key: $(basename "$key") (may require passphrase)"
-            fi
-        else
-            # Non-interactive - skip keys that need passphrase
-            if ssh-add "$key" 2>/dev/null; then
-                keys_loaded=$((keys_loaded + 1))
-            else
-                debug "Skipping SSH key that requires passphrase: $(basename "$key")"
-            fi
-        fi
-    done
-    
-    if [[ $keys_loaded -gt 0 ]]; then
-        debug "Loaded $keys_loaded SSH key(s) into agent"
-    fi
-    if [[ $keys_skipped -gt 0 ]]; then
-        debug "Skipped $keys_skipped already-loaded SSH key(s)"
-    fi
-}
-
-# ensure_ssh_directory: Ensure .ssh directory exists with correct permissions
-# Usage: ensure_ssh_directory <ssh_dir>
-ensure_ssh_directory() {
-    local ssh_dir="$1"
-    
-    if [[ ! -d "$ssh_dir" ]]; then
-        mkdir -p "$ssh_dir"
-        run chmod 700 "$ssh_dir"
-    else
-        # Verify permissions are correct (chmod is idempotent, but we log it)
-        run chmod 700 "$ssh_dir"
-    fi
-}
-
-# import_keys_from_archive: Import SSH keys from archive file
-# Usage: import_keys_from_archive <archive_path> <ssh_dir>
-import_keys_from_archive() {
-    local archive_path="$1"
-    local ssh_dir="$2"
-    
-    log "Importing SSH keys from archive: $archive_path"
-    
-    if [[ $FORCE -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
-        if extract_ssh_keys_from_archive "$archive_path" "$ssh_dir"; then
-            success "SSH keys imported from archive: $archive_path"
-            return 0
-        else
-            error "Failed to extract SSH keys from archive: $archive_path"
-            error "Please verify the archive format and permissions"
-            return 1
-        fi
-    else
-        debug "SSH keys already exist, skipping import (use --force to overwrite)"
-        return 0
-    fi
-}
-
-# import_keys_from_directory: Import SSH keys from directory
-# Usage: import_keys_from_directory <source_dir> <ssh_dir> <description>
-import_keys_from_directory() {
-    local source_dir="$1"
-    local ssh_dir="$2"
-    local description="$3"
-    
-    log "Importing SSH keys from $description: $source_dir"
-    
-    local keys_imported=0
-    for keyfile in "$source_dir"/id_*; do
-        [[ -f "$keyfile" ]] || continue
-        
-        local basename
-        basename="$(basename "$keyfile")"
-        local target="$ssh_dir/$basename"
-        
-        if [[ ! -f "$target" ]] || [[ $FORCE -eq 1 ]]; then
-            if run cp "$keyfile" "$target"; then
-                # Set correct permissions based on file type
-                if [[ "$basename" != *.pub ]]; then
-                    run chmod 600 "$target"
-                    keys_imported=$((keys_imported + 1))
-                else
-                    run chmod 644 "$target"
-                fi
-            else
-                warn "Failed to copy key: $basename"
-            fi
-        fi
-    done
-    
-    if [[ $keys_imported -gt 0 ]]; then
-        success "SSH keys imported from $description"
-        return 0
-    else
-        debug "SSH keys already present, skipping import"
-        return 0
-    fi
-}
-
-# import_keys_from_windows_home: Import keys from Windows user home directory
-# Usage: import_keys_from_windows_home <win_user> <ssh_dir>
-import_keys_from_windows_home() {
-    local win_user="$1"
-    local ssh_dir="$2"
-    
-    # By convention, keys are in C:\Users\{WIN_USER}\keys.tar.gz
-    local keys_archive="/mnt/c/Users/${win_user}/keys.tar.gz"
-    
-    if [[ -f "$keys_archive" ]]; then
-        if import_keys_from_archive "$keys_archive" "$ssh_dir"; then
-            return 0
-        else
-            return 1
-        fi
-    fi
-    
-    # Fallback: Check Windows .ssh directory
-    local win_ssh_dir="/mnt/c/Users/$win_user/.ssh"
-    if [[ -d "$win_ssh_dir" ]]; then
-        import_keys_from_directory "$win_ssh_dir" "$ssh_dir" "Windows"
-        return 0
-    fi
-    
-    return 1
-}
-
-# generate_new_ssh_key: Generate a new SSH key if none exists
-# Usage: generate_new_ssh_key <ssh_dir> <email>
-generate_new_ssh_key() {
-    local ssh_dir="$1"
-    local email="$2"
-    
-    if ! has_ssh_keys "$ssh_dir"; then
-        warn "No SSH keys found. Generating new key..."
-        run ssh-keygen -t ed25519 -C "$email" -f "$ssh_dir/id_ed25519" -N ""
-        success "New SSH key generated"
-        
-        echo ""
-        log "Add this public key to GitHub:"
-        cat "$ssh_dir/id_ed25519.pub"
-        echo ""
-    else
-        debug "SSH keys already present"
-    fi
-}
-
-import_ssh_keys() {
-    local ssh_dir="${HOME}/.ssh"
-    
-    # Ensure .ssh directory exists with correct permissions
-    ensure_ssh_directory "$ssh_dir"
-    
-    # Check if keys already exist (from bootstrap import)
-    if has_ssh_keys "$ssh_dir" && [[ $FORCE -eq 0 ]]; then
-        debug "SSH keys already present (from bootstrap), skipping import"
-        return 0
-    fi
-    
-    # Priority 1: Import from explicit KEYS_PATH if provided
-    if [[ -n "$KEYS_PATH" ]] && [[ -f "$KEYS_PATH" ]]; then
-        if import_keys_from_archive "$KEYS_PATH" "$ssh_dir"; then
-            return 0
-        else
-            return 1
-        fi
-    fi
-    
-    # Priority 2: Import from Windows user home directory (by convention)
-    # Auto-detect Windows username if not provided
-    local win_user="${WIN_USER:-}"
-    
-    if [[ -z "$win_user" ]]; then
-        win_user="$(detect_windows_user 2>/dev/null || echo "")"
-    fi
-    
-    # Skip if we couldn't detect a username
-    if [[ -z "$win_user" ]]; then
-        debug "Windows username not detected, skipping Windows key import"
-    elif import_keys_from_windows_home "$win_user" "$ssh_dir"; then
-        return 0
-    fi
-    
-    # Generate new SSH key if none exists
-    generate_new_ssh_key "$ssh_dir" "$GIT_EMAIL"
-}
-
-# configure_ssh_agent: Setup ssh-agent persistence
-configure_ssh_agent() {
-    log "Configuring ssh-agent..."
-    
-    local zshrc="${HOME}/.zshrc"
-    local bashrc="${HOME}/.bashrc"
-    
-    # Improved SSH agent config that works for both bash and zsh
-    # Uses better key detection and avoids duplicate loading
-    local ssh_agent_config
-    ssh_agent_config=$(cat << 'SSH_CONFIG_EOF'
-# --- Wiz SSH Agent Configuration ---
-# Start ssh-agent if not running
-if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
-    eval "$(ssh-agent -s)" >/dev/null 2>&1
-    export SSH_AUTH_SOCK SSH_AGENT_PID
-    
-    # Get list of already-loaded key fingerprints
-    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}' || echo "")
-    
-    # Load all private keys that aren't already loaded
-    for key in "${HOME}/.ssh/"*; do
-        [[ -f "$key" ]] || continue
-        [[ "$key" == *.pub ]] && continue
-        [[ "$key" == *known_hosts* ]] && continue
-        [[ "$key" == *config* ]] && continue
-        
-        # Check if key is already loaded by fingerprint
-        # Use cached fingerprint for better performance
-        if command -v ssh-keygen >/dev/null 2>&1; then
-            if declare -f get_cached_ssh_fingerprint >/dev/null 2>&1; then
-                key_fingerprint=$(get_cached_ssh_fingerprint "$key")
-            else
-                # Fallback to direct call if caching function not available
-                key_fingerprint=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $2}' || echo "")
-            fi
-            if [[ -n "$key_fingerprint" ]] && [[ "$loaded_fingerprints" == *"$key_fingerprint"* ]]; then
-                continue
-            fi
-        fi
-        
-        # Try to add key (will prompt for passphrase if needed)
-        ssh-add "$key" 2>/dev/null || true
-    done
-fi
-# --- End Wiz SSH Agent Configuration ---
-SSH_CONFIG_EOF
-)
-    
-    # Add to .bashrc - ensure it's early in the file for proper initialization
-    if [[ -f "$bashrc" ]]; then
-        # Remove any existing SSH agent config first
-        if grep -q "Wiz SSH Agent" "$bashrc" 2>/dev/null; then
-            sed_inplace '/# --- Wiz SSH Agent Configuration ---/,/# --- End Wiz SSH Agent Configuration ---/d' "$bashrc"
-        fi
-        # Prepend to file (SSH agent should load early)
-        local tmp_bashrc
-        tmp_bashrc=$(mktemp) && { echo "$ssh_agent_config"; cat "$bashrc"; } > "$tmp_bashrc" && mv "$tmp_bashrc" "$bashrc"
-        debug "SSH agent config added to .bashrc"
-    fi
-    
-    # Add to .zshrc if it exists - ensure it's early in the file
-    if [[ -f "$zshrc" ]]; then
-        # Remove any existing SSH agent config first
-        if grep -q "Wiz SSH Agent" "$zshrc" 2>/dev/null; then
-            sed_inplace '/# --- Wiz SSH Agent Configuration ---/,/# --- End Wiz SSH Agent Configuration ---/d' "$zshrc"
-        fi
-        
-        # Insert early in file (after Oh My Zsh setup but before other tools)
-        # Check if Oh My Zsh is configured
-        local inserted=0
-        if grep -q "^plugins=" "$zshrc" 2>/dev/null; then
-            # Insert after plugins line using a reliable method
-            local plugins_line
-            plugins_line=$(grep -n "^plugins=" "$zshrc" | head -1 | cut -d: -f1)
-            if [[ -n "$plugins_line" ]]; then
-                # Create secure temp files (mktemp avoids race conditions)
-                local tmp_insert tmp_zshrc
-                if tmp_insert=$(mktemp) && tmp_zshrc=$(mktemp); then
-                    echo "$ssh_agent_config" > "$tmp_insert"
-                    awk -v line="$plugins_line" -v tmpfile="$tmp_insert" '
-                        NR == line { print; while ((getline < tmpfile) > 0) print; close(tmpfile); next }
-                        { print }
-                    ' "$zshrc" > "$tmp_zshrc" && mv "$tmp_zshrc" "$zshrc"
-                    rm -f "$tmp_insert"
-                    inserted=1
-                fi
-            fi
-        fi
-        # Fallback: prepend to file if insertion failed or not applicable
-        if [[ $inserted -eq 0 ]]; then
-            local tmp_zshrc_fallback
-            tmp_zshrc_fallback=$(mktemp) && { echo "$ssh_agent_config"; cat "$zshrc"; } > "$tmp_zshrc_fallback" && mv "$tmp_zshrc_fallback" "$zshrc"
-        fi
-        debug "SSH agent config added to .zshrc"
-    fi
-    
-    # Load SSH keys in current session if ssh-agent is available
-    # This will check if keys are already loaded and skip them
-    load_ssh_keys_to_agent
-    
-    success "SSH agent configured"
-}
-
 # ==============================================================================
 # MODULE INSTALLATION FUNCTIONS
 # ==============================================================================
 
 # init_config: Initialize configuration and environment
+# Called by run_module_installation() (defined in lib/module-base.sh).
 init_config() {
     # Ensure log directory exists
-    mkdir -p "$LOG_DIR"
-    
+    mkdir -p "$WIZ_LOG_DIR"
+
     # Ensure state directory exists
     mkdir -p "$WIZ_STATE_DIR"
-    
+
     # Note: .env is loaded in main() for Phase 2 (identity setup), but this function
     # is for Phase 1 (module installation) initialization, so .env may not exist yet
     if [[ -f "${WIZ_ROOT}/.env" ]]; then
-        # shellcheck source=/dev/null
-        source "${WIZ_ROOT}/.env"
+        _load_env "${WIZ_ROOT}/.env"
         debug "Loaded configuration from .env"
     fi
-    
+
     return 0
-}
-
-list_modules() {
-    echo "Available Modules:"
-    echo "=================="
-    echo ""
-    
-    for module_file in "${MODULES_DIR}"/install_*.sh; do
-        [[ -f "$module_file" ]] || continue
-        
-        local module_name
-        module_name="$(basename "$module_file" .sh)"
-        module_name="${module_name#install_}"
-        
-        (
-            # shellcheck source=/dev/null
-            if ! source "$module_file" 2>/dev/null; then
-                printf "  %-15s v%-8s %s\n" \
-                    "$module_name" \
-                    "ERROR" \
-                    "Failed to load module"
-                exit 1
-            fi
-
-            printf "  %-15s v%-8s %s\n" \
-                "$module_name" \
-                "${MODULE_VERSION:-unknown}" \
-                "${MODULE_DESCRIPTION:-No description}"
-        ) || warn "Could not read module: $module_name"
-    done
-    
-    echo ""
-}
-
-is_disabled() {
-    local module="$1"
-    
-    for disabled in "${DISABLED_MODULES[@]+"${DISABLED_MODULES[@]}"}"; do
-        [[ "$module" == "$disabled" ]] && return 0
-    done
-    
-    return 1
-}
-
-execute_module_wrapper() {
-    local module="$1"
-    local module_file="${MODULES_DIR}/install_${module}.sh"
-
-    if [[ ! -f "$module_file" ]]; then
-        error "Module not found: $module" \
-            "Available modules: $(ls -1 "${MODULES_DIR}"/install_*.sh | sed 's|.*/install_||;s|\.sh$||' | tr '\n' ' ')"
-        return 1
-    fi
-
-    if is_disabled "$module"; then
-        log "Module disabled: $module"
-        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
-        return 0
-    fi
-
-    if is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
-        log "Module already completed: $module (use --force to reinstall)"
-        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
-        return 0
-    fi
-
-    # Run pre-module hooks
-    run_hooks "pre-module" "$module"
-
-    log "Executing module: $module"
-
-    if (
-        # shellcheck source=/dev/null
-        source "$module_file"
-        execute_module "$module"
-    ); then
-        MODULES_COMPLETED=$((MODULES_COMPLETED + 1))
-        # Run post-module hooks on success
-        run_hooks "post-module" "$module"
-        return 0
-    else
-        MODULES_FAILED=$((MODULES_FAILED + 1))
-        error "Module failed: $module"
-        
-        if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
-            error "Stopping due to error (set WIZ_STOP_ON_ERROR=0 to continue)"
-            return 1
-        fi
-        
-        return 0
-    fi
-}
-
-# show_installation_summary: Display what will be installed before starting
-show_installation_summary() {
-    local ordered_modules="$1"
-    local modules_to_install=()
-    local modules_to_skip=()
-    
-    # Convert space-separated string to array
-    local module_array
-    local old_ifs="$IFS"
-    IFS=' '
-    read -ra module_array <<< "$ordered_modules"
-    IFS="$old_ifs"
-    
-    # Categorize modules
-    for module in "${module_array[@]}"; do
-        if is_disabled "$module"; then
-            continue  # Skip disabled modules
-        elif is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
-            modules_to_skip+=("$module")
-        else
-            modules_to_install+=("$module")
-        fi
-    done
-    
-    # Display summary
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  INSTALLATION PLAN"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
-    if [[ ${#modules_to_install[@]} -gt 0 ]]; then
-        IFS=' '
-        local install_display="${modules_to_install[*]}"
-        IFS="$old_ifs"
-        printf "  📦 Will install:   %s\n" "$install_display"
-        printf "  Total modules:    %d\n" "${#modules_to_install[@]}"
-    else
-        printf "  📦 Will install:   (none - all modules completed)\n"
-    fi
-    
-    if [[ ${#modules_to_skip[@]} -gt 0 ]]; then
-        IFS=' '
-        local skip_display="${modules_to_skip[*]}"
-        IFS="$old_ifs"
-        printf "  ⊘ Will skip:       %s\n" "$skip_display"
-        printf "  Skipped count:    %d\n" "${#modules_to_skip[@]}"
-    fi
-    
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-show_statistics() {
-    local total=$((MODULES_COMPLETED + MODULES_FAILED + MODULES_SKIPPED))
-    
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  INSTALLATION STATISTICS"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    printf "  Total modules:    %d\n" "$total"
-    printf "  ✓ Completed:      %d\n" "$MODULES_COMPLETED"
-    printf "  ⊘ Skipped:        %d\n" "$MODULES_SKIPPED"
-    printf "  ✖ Failed:         %d\n" "$MODULES_FAILED"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-run_module_installation() {
-    log "Wiz Module Installation v0.2.0"
-    echo ""
-    
-    init_config
-    mkdir -p "$WIZ_STATE_DIR"
-    
-    if [[ ${#REQUESTED_MODULES[@]} -eq 0 ]]; then
-        REQUESTED_MODULES=("${DEFAULT_MODULES[@]}")
-    fi
-    
-    # Display modules with proper formatting (IFS affects array joining)
-    local modules_display
-    local old_ifs="$IFS"
-    IFS=' '
-    modules_display="${REQUESTED_MODULES[*]}"
-    IFS="$old_ifs"
-    
-    log "Modules to install: ${modules_display}"
-    
-    if [[ ${#DISABLED_MODULES[@]} -gt 0 ]]; then
-        IFS=' '
-        local disabled_display="${DISABLED_MODULES[*]}"
-        IFS="$old_ifs"
-        log "Modules to skip: ${disabled_display}"
-    fi
-    echo ""
-    
-    if ! verify_dependencies; then
-        error "Dependency verification failed"
-        return 1
-    fi
-    
-    log "Resolving dependencies..."
-    
-    local ordered_modules
-    if ordered_modules=$(get_install_order "${REQUESTED_MODULES[@]}"); then
-        debug "Installation order: $ordered_modules"
-    else
-        error "Failed to resolve dependencies"
-        return 1
-    fi
-    
-    # Show installation summary before starting
-    show_installation_summary "$ordered_modules"
-
-    # Run pre-install hooks
-    run_hooks "pre-install"
-
-    log "Starting module installation..."
-    echo ""
-    
-    # Convert space-separated string to array (temporarily restore default IFS)
-    local module_array
-    local old_ifs="$IFS"
-    IFS=' '
-    read -ra module_array <<< "$ordered_modules"
-    IFS="$old_ifs"
-    
-    local total=${#module_array[@]}
-    local current=0
-    local start_time
-    start_time=$(date +%s)
-    
-    for module in "${module_array[@]}"; do
-        current=$((current + 1))
-        
-        progress_bar "$current" "$total" "[$current/$total] $module" "$start_time"
-        
-        if ! execute_module_wrapper "$module"; then
-            error "Module execution failed: $module" \
-                "Try: ./bin/install --module=$module --verbose --debug"
-            
-            if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
-                error "Stopping installation due to error" \
-                    "Set WIZ_STOP_ON_ERROR=0 to continue on errors"
-                return 1
-            fi
-        fi
-    done
-
-    # Run post-install hooks
-    run_hooks "post-install"
-
-    show_statistics
-
-    if [[ $MODULES_FAILED -eq 0 ]]; then
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        success "  Module installation completed successfully!"
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        return 0
-    else
-        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        error "  Module installation completed with errors"
-        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        return 1
-    fi
 }
 
 # ==============================================================================
@@ -1114,6 +267,10 @@ run_module_installation() {
 # ==============================================================================
 
 main() {
+    # Discover modules and populate MODULE_DEPS_MAP before parsing args
+    # (needed early so --list and --graph work correctly)
+    mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+
     # Parse arguments
     parse_args "$@"
     
@@ -1126,7 +283,7 @@ main() {
     show_banner
     
     log "Starting Wiz installation..."
-    log "Log file: ${LOG_FILE:-logs/install_$(date +%F).log}"
+    log "Log file: ${WIZ_LOG_FILE:-logs/install_$(date +%F).log}"
     echo ""
     
     # PHASE 1: Development Tools Installation (unless skipped)
@@ -1152,8 +309,7 @@ main() {
         
         # Load .env early if it exists (may contain WIN_USER from bootstrap)
         if [[ -f "${WIZ_ROOT}/.env" ]]; then
-            # shellcheck source=/dev/null
-            source "${WIZ_ROOT}/.env"
+            _load_env "${WIZ_ROOT}/.env"
             debug "Loaded existing .env configuration"
         fi
         

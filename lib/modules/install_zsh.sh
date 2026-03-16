@@ -11,20 +11,16 @@
 #
 # Dependencies: essentials (for zsh installation)
 #
-# Usage:
-#   ./install_zsh.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="zsh"
@@ -40,11 +36,8 @@ OHMYZSH_DIR="$HOME/.oh-my-zsh"
 
 # describe_zsh: Describe what this module will install
 describe_zsh() {
+    _module_banner "🐚 ZSH CONFIGURATION"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🐚 ZSH CONFIGURATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module configures Zsh as your default shell:
 
@@ -60,7 +53,6 @@ Features:
   - Git integration
   - Syntax highlighting ready
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
@@ -111,17 +103,17 @@ install_zsh() {
     log "Configuring .zshrc..."
     
     # Create or update .zshrc with common plugins
-    if ! grep -q "plugins=" "$ZSHRC" 2>/dev/null; then
+    if grep -q "^plugins=" "$ZSHRC" 2>/dev/null; then
+        log "Updating plugins configuration..."
+        sed_inplace 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC"
+    else
         log "Adding plugins configuration..."
-        sed_inplace 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
-            # If sed failed, append configuration
-            cat >> "$ZSHRC" << 'EOF'
+        cat >> "$ZSHRC" << 'EOF'
 
 # --- Wiz Zsh Configuration ---
 plugins=(git colored-man-pages extract)
 # --- End Wiz Zsh Configuration ---
 EOF
-        }
     fi
     
     # Set as default shell (if not already)

@@ -13,20 +13,16 @@
 #
 # Dependencies: essentials (for curl, wget, build-essential)
 #
-# Usage:
-#   ./install_node.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="node"
@@ -37,21 +33,24 @@ MODULE_DEPS="essentials"
 # Configuration
 NVM_VERSION="v0.39.7"
 NVM_DIR="${HOME}/.nvm"
+# SHA-256 of the NVM install.sh for NVM_VERSION above.
+# Must be set — installation aborts if empty (fail-closed security posture).
+# To obtain: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum
+# Update this constant whenever NVM_VERSION is bumped.
+NVM_INSTALLER_SHA256=""
 
 # --- Module Interface Implementation ---
 
 # describe_node: Describe what this module will install
 describe_node() {
+    local node_target="${WIZ_NODE_VERSION:-lts}"
+    _module_banner "📦 NODE.JS VIA NVM"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 NODE.JS VIA NVM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Node.js development environment:
 
   📦 NVM ${NVM_VERSION}:     Node Version Manager
-  🟢 Node.js LTS:        Latest long-term support version
+  🟢 Node.js ${node_target}:        Target version (override with --node-version)
   📋 npm:                Node package manager
   🔧 Corepack:           Yarn & pnpm package manager support
 
@@ -65,7 +64,6 @@ Configuration:
   - Sets moderate audit level
   - Minimal npm output
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
@@ -76,9 +74,32 @@ install_node() {
     # Install NVM if not present
     if [[ ! -d "$NVM_DIR" ]]; then
         log "Installing NVM ${NVM_VERSION}..."
-        curl_or_wget_pipe "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" "" "Failed to install NVM" || {
+
+        local nvm_url="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
+        local nvm_tmp
+        nvm_tmp="$(download_to_temp "$nvm_url" "Failed to download NVM installer")" || {
             module_fail "NVM installation failed"
         }
+
+        # Verify checksum before executing.
+        # NVM_INSTALLER_SHA256 must be set — fail closed if empty.
+        if [[ -z "$NVM_INSTALLER_SHA256" ]]; then
+            rm -f "$nvm_tmp"
+            module_fail "NVM_INSTALLER_SHA256 is not set. To obtain the value, run: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum"
+        fi
+        local verify_result=0
+        verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
+        if [[ $verify_result -eq 1 ]]; then
+            rm -f "$nvm_tmp"
+            module_fail "NVM installer checksum mismatch — aborting for security"
+        fi
+        # verify_result=2 means no sha tool available; warn already emitted, proceed
+
+        run_shell "bash '$nvm_tmp'" || {
+            rm -f "$nvm_tmp"
+            module_fail "NVM installation failed"
+        }
+        rm -f "$nvm_tmp"
         success "NVM installed successfully"
     else
         log "NVM already installed at ${NVM_DIR}"
@@ -104,30 +125,46 @@ install_node() {
     add_nvm_to_shell_rc "${HOME}/.bashrc"
     add_nvm_to_shell_rc "${HOME}/.zshrc"
     
-    # Install or update Node LTS
+    # Resolve target version: CLI override or fall back to LTS
+    local node_target="${WIZ_NODE_VERSION:-lts}"
+    local nvm_install_arg
+    local nvm_use_arg
+    if [[ "$node_target" == "lts" ]]; then
+        nvm_install_arg="--lts"
+        nvm_use_arg="--lts"
+    else
+        nvm_install_arg="$node_target"
+        nvm_use_arg="$node_target"
+    fi
+
+    # Install or update Node
     # NOTE: nvm is a shell function, so we must use run_shell
     if ! command_exists node; then
-        log "Installing Node.js LTS..."
-        # Temporarily disable nounset for NVM (it uses unset variables internally)
+        log "Installing Node.js ${node_target}..."
         set +u
-        run_shell "nvm install --lts" || {
+        run_shell "nvm install ${nvm_install_arg}" || {
             set -u
-            module_fail "Failed to install Node.js LTS"
+            module_fail "Failed to install Node.js ${node_target}"
         }
         set -u
     else
-        log "Updating to latest LTS..."
+        log "Updating to Node.js ${node_target}..."
         set +u
-        run_shell "nvm install --lts" || warn "LTS update had issues, continuing..."
-        run_shell "nvm alias default 'lts/*'" || warn "Failed to set default alias"
+        run_shell "nvm install ${nvm_install_arg}" || \
+            warn "Node.js ${node_target} update had issues, continuing..."
+        if [[ "$node_target" == "lts" ]]; then
+            run_shell "nvm alias default 'lts/*'" || warn "Failed to set default alias"
+        else
+            run_shell "nvm alias default '${node_target}'" || warn "Failed to set default alias"
+        fi
         set -u
     fi
 
-    # Use LTS version
+    # Use target version
     set +u
-    run_shell "nvm use --lts" || {
+    run_shell "nvm use ${nvm_use_arg}" || {
         set -u
-        module_fail "Failed to switch to LTS version"
+        module_fail "Failed to switch to Node.js ${node_target}"
     }
     set -u
 
@@ -159,31 +196,24 @@ install_node() {
 # add_nvm_to_shell_rc: Add NVM initialization to shell RC file
 add_nvm_to_shell_rc() {
     local rc_file="$1"
-    
+
     # Skip if file doesn't exist and we're not in dry-run
-    [[ ! -e "$rc_file" ]] && [[ $DRY_RUN -eq 0 ]] && return 0
-    
-    # Check if NVM block already present
-    if [[ -f "$rc_file" ]] && grep -q '# >>> NVM init >>>' "$rc_file"; then
-        debug "NVM init already present in ${rc_file}"
-        return 0
-    fi
-    
-    log "Adding NVM init to ${rc_file}..."
-    
+    [[ ! -e "$rc_file" ]] && [[ ${WIZ_DRY_RUN:-0} -eq 0 ]] && return 0
+
     local nvm_init='
 # >>> NVM init >>>
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 # <<< NVM init <<<'
-    
-    if [[ $DRY_RUN -eq 1 ]]; then
+
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would append NVM init block to ${rc_file}"
-    else
-        echo "$nvm_init" >> "$rc_file"
-        success "Added NVM init to ${rc_file}"
+        return 0
     fi
+
+    append_to_file_once "$rc_file" ">>> NVM init >>>" "$nvm_init"
+    debug "NVM init present in ${rc_file}"
 }
 
 # verify_node: Verify installation succeeded

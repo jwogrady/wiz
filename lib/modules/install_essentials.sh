@@ -13,20 +13,16 @@
 #
 # Dependencies: None (foundational module)
 #
-# Usage:
-#   ./install_essentials.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="essentials"
@@ -109,11 +105,8 @@ is_enabled() {
 
 # describe_essentials: Describe what this module will install
 describe_essentials() {
+    _module_banner "📦 ESSENTIAL SYSTEM PACKAGES"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 ESSENTIAL SYSTEM PACKAGES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs foundational system packages:
 
@@ -128,7 +121,6 @@ This module installs foundational system packages:
 
 Total packages: ~50+
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

@@ -12,20 +12,16 @@
 #
 # Dependencies: zsh (for optimal experience)
 #
-# Usage:
-#   ./install_starship.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="starship"
@@ -45,11 +41,8 @@ STARSHIP_PRESET="${WIZ_ROOT}/config/starship_linux.toml"
 
 # describe_starship: Describe what this module will install
 describe_starship() {
+    _module_banner "✨ STARSHIP PROMPT"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ STARSHIP PROMPT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Starship with the Cosmic Oasis preset:
 
@@ -69,7 +62,6 @@ Features:
 
 Cosmic Oasis - Polished Crescent Edition with perfectly matched gradient joins.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
@@ -89,30 +81,34 @@ install_starship() {
         # Install via official installer
         progress "Downloading Starship installer..."
         
-        # Download and run installer directly with proper arguments
-        # NOTE: Uses run_shell because of pipe to sh
-        if command_exists curl; then
-            run_shell "curl -sS https://starship.rs/install.sh | sh -s -- --yes" || {
-                warn "curl installation failed, trying wget..."
-                if command_exists wget; then
-                    run_shell "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
-                        warn "Official installer failed, trying alternative methods..."
-                        install_starship_fallback
-                    }
-                else
-                    warn "Official installer failed, trying alternative methods..."
-                    install_starship_fallback
-                fi
-            }
-        elif command_exists wget; then
-            run_shell "wget -qO- https://starship.rs/install.sh | sh -s -- --yes" || {
-                warn "Official installer failed, trying alternative methods..."
-                install_starship_fallback
-            }
-        else
-            warn "Neither curl nor wget available, trying alternative methods..."
-            install_starship_fallback
+        # Resolve target version: CLI override or latest
+        local starship_target="${WIZ_STARSHIP_VERSION:-}"
+        local version_flag=""
+        if [[ -n "$starship_target" ]]; then
+            version_flag=" --version ${starship_target}"
         fi
+
+        # Download installer to temp file, then execute — avoids partial execution
+        # on interrupted downloads. Starship does not publish a checksum for
+        # install.sh, so we skip SHA verification and warn the user.
+        local starship_tmp
+        starship_tmp="$(download_to_temp \
+            "https://starship.rs/install.sh" \
+            "Failed to download Starship installer")" || {
+            warn "Official installer download failed, trying alternative methods..."
+            install_starship_fallback
+            return 0
+        }
+
+        warn "No published checksum for Starship installer — skipping SHA-256 verification"
+
+        run_shell "sh '${starship_tmp}' -- --yes${version_flag}" || {
+            rm -f "$starship_tmp"
+            warn "Official installer failed, trying alternative methods..."
+            install_starship_fallback
+            return 0
+        }
+        rm -f "$starship_tmp"
         
         # Verify installation
         if ! command_exists starship; then
@@ -377,30 +373,32 @@ fi
 # --- End Wiz Starship Prompt ---
 '
     
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+        log "[DRY-RUN] Would configure Starship init in shell profiles"
+        success "Shell integration configured"
+        return 0
+    fi
+
     # Add to Bash - ensure it's at the end for proper initialization order
     if [[ -f "$BASHRC" ]]; then
-        # Remove any existing Starship config first
+        # Remove any existing Starship config first (update pattern)
         if grep -q "Wiz Starship Prompt" "$BASHRC" 2>/dev/null; then
-            # Remove old config between markers
             sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$BASHRC"
         fi
-        # Append new config at the end
         echo "$starship_init" >> "$BASHRC"
         debug "Starship init added to .bashrc"
     fi
-    
+
     # Add to Zsh - ensure it's at the end for proper initialization order
     if [[ -f "$ZSHRC" ]]; then
-        # Remove any existing Starship config first
+        # Remove any existing Starship config first (update pattern)
         if grep -q "Wiz Starship Prompt" "$ZSHRC" 2>/dev/null; then
-            # Remove old config between markers
             sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$ZSHRC"
         fi
-        # Append new config at the end
         echo "$starship_zsh_init" >> "$ZSHRC"
         debug "Starship init added to .zshrc"
     fi
-    
+
     success "Shell integration configured"
 }
 

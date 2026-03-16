@@ -11,20 +11,16 @@
 #
 # Dependencies: ALL (runs after all other modules)
 #
-# Usage:
-#   ./install_summary.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base (which sources common.sh)
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Ensure color variables are available (defensive fallback)
 # These should be set by common.sh, but provide fallbacks if not
@@ -41,11 +37,8 @@ MODULE_DEPS="ALL"
 
 # describe_summary: Describe what this module will do
 describe_summary() {
+    _module_banner "📋 INSTALLATION SUMMARY"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 INSTALLATION SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module displays a summary of your installation:
 
@@ -54,22 +47,24 @@ This module displays a summary of your installation:
   🔧 Installed tools
   📚 Next steps
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
 # install_summary: Main installation logic
 install_summary() {
     log "Generating installation summary..."
-    
-    # Display summary
-    show_installation_summary
-    
+
+    # Display completion report (named distinctly from bin/install's
+    # show_installation_summary which shows the pre-run installation plan)
+    show_completion_report
+
     return 0
 }
 
-# show_installation_summary: Display comprehensive summary
-show_installation_summary() {
+# show_completion_report: Display what was installed and next steps
+# Note: deliberately named differently from show_installation_summary() in
+# bin/install, which shows the pre-run plan. This function shows post-run results.
+show_completion_report() {
     echo ""
     success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     success "  INSTALLATION SUMMARY"
@@ -79,8 +74,7 @@ show_installation_summary() {
     # Installed modules
     log "Installed Modules:"
     local modules_installed=0
-    # SCRIPT_DIR already points to lib/modules, so use it directly
-    local modules_dir="${SCRIPT_DIR}"
+    local modules_dir="${WIZ_ROOT}/lib/modules"
     for module_file in "${modules_dir}"/install_*.sh; do
         [[ -f "$module_file" ]] || continue
         

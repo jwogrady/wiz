@@ -10,20 +10,16 @@
 #
 # Dependencies: essentials (for build tools if building from source)
 #
-# Usage:
-#   ./install_neovim.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="neovim"
@@ -38,11 +34,8 @@ NEOVIM_CONFIG_DIR="$HOME/.config/nvim"
 
 # describe_neovim: Describe what this module will install
 describe_neovim() {
+    _module_banner "📝 NEOVIM EDITOR"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 NEOVIM EDITOR
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Neovim, a modern Vim fork:
 
@@ -57,7 +50,6 @@ Features:
   - Better performance
   - Terminal integration
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

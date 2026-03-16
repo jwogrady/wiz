@@ -12,20 +12,16 @@
 #
 # Dependencies: essentials (for curl/wget)
 #
-# Usage:
-#   ./install_bun.sh
-#   or sourced by bootstrap orchestrator
+# Sourcing:
+#   source /path/to/lib/module-base.sh   # then source this file
 #
 # ==============================================================================
 
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="bun"
@@ -37,11 +33,8 @@ MODULE_DEPS="essentials"
 
 # describe_bun: Describe what this module will install
 describe_bun() {
+    _module_banner "🍞 BUN JAVASCRIPT RUNTIME"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🍞 BUN JAVASCRIPT RUNTIME
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Bun, a fast JavaScript runtime:
 
@@ -57,7 +50,6 @@ Features:
   - Native bundler and test runner
   - Built-in TypeScript support
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
@@ -69,26 +61,41 @@ install_bun() {
         return 0
     fi
     
-    log "Installing Bun..."
-    
+    # Resolve target version: CLI override or fetch latest
+    local bun_target="${WIZ_BUN_VERSION:-latest}"
+    log "Installing Bun ${bun_target}..."
+
     # Install via official installer
     progress "Downloading Bun installer..."
-    
-    # Download and run Bun installer (it's already non-interactive)
-    # NOTE: Uses run_shell because of pipe to bash
-    if command_exists curl; then
-        run_shell "curl -fsSL https://bun.sh/install | bash" || {
-            error "Bun installation via curl failed"
-            module_fail "Bun installation failed"
-        }
-    elif command_exists wget; then
-        run_shell "wget -qO- https://bun.sh/install | bash" || {
-            error "Bun installation via wget failed"
-            module_fail "Bun installation failed"
-        }
-    else
-        error "Neither curl nor wget available"
+
+    # Download installer to temp file, then execute — avoids partial execution
+    # on interrupted downloads. Bun does not publish a checksum for install.sh,
+    # so we skip SHA verification and warn the user.
+    local bun_tmp
+    bun_tmp="$(download_to_temp "https://bun.sh/install" "Failed to download Bun installer")" || {
         module_fail "Bun installation failed"
+    }
+
+    warn "No published checksum for Bun installer — skipping SHA-256 verification"
+
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+        log "[DRY-RUN] Would execute Bun installer: ${bun_tmp}"
+        rm -f "$bun_tmp"
+    else
+        # Pass BUN_VERSION via env(1) so version string is never interpolated into
+        # a shell command string — safe regardless of special characters in the value.
+        if [[ "$bun_target" != "latest" ]]; then
+            run_stream env BUN_VERSION="$bun_target" bash "$bun_tmp" || {
+                rm -f "$bun_tmp"
+                module_fail "Bun installation failed"
+            }
+        else
+            run_stream bash "$bun_tmp" || {
+                rm -f "$bun_tmp"
+                module_fail "Bun installation failed"
+            }
+        fi
+        rm -f "$bun_tmp"
     fi
     
     # Add Bun to PATH for current session
@@ -119,32 +126,33 @@ export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 # <<< Bun init <<<
 EOF
-    
-    # Add to .zshrc if it exists and Bun config is not already there
-    if [[ -f "$HOME/.zshrc" ]] && ! grep -q "BUN_INSTALL" "$HOME/.zshrc"; then
-        echo "" >> "$HOME/.zshrc"
-        echo "$bun_config" >> "$HOME/.zshrc"
-        debug "Added Bun configuration to .zshrc"
+
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+        log "[DRY-RUN] Would append Bun init block to shell profiles"
+        return 0
     fi
-    
-    # Add to .bashrc if it exists and Bun config is not already there
-    # (Bun installer may have already added it, but we use our format)
+
+    # Add to .zshrc if it exists
+    if [[ -f "$HOME/.zshrc" ]]; then
+        append_to_file_once "$HOME/.zshrc" ">>> Bun init >>>" "$bun_config"
+        debug "Bun configuration present in .zshrc"
+    fi
+
+    # Add to .bashrc if it exists
+    # (Bun installer may have already added it in its own format; normalize to ours)
     if [[ -f "$HOME/.bashrc" ]]; then
         # Remove old Bun installer format if present
-        if grep -q "BUN_INSTALL" "$HOME/.bashrc" && ! grep -q ">>> Bun init >>>" "$HOME/.bashrc"; then
-            # Backup and remove old entries
-            sed -i.bak '/^# bun$/d; /^export BUN_INSTALL=/d; /^export PATH=.*BUN_INSTALL/d' "$HOME/.bashrc"
+        if grep -q "BUN_INSTALL" "$HOME/.bashrc" && \
+           ! grep -q ">>> Bun init >>>" "$HOME/.bashrc"; then
+            sed_inplace \
+                '/^# bun$/d; /^export BUN_INSTALL=/d; /^export PATH=.*BUN_INSTALL/d' \
+                "$HOME/.bashrc"
             debug "Removed old Bun configuration from .bashrc"
         fi
-        
-        # Add our format if not present
-        if ! grep -q ">>> Bun init >>>" "$HOME/.bashrc"; then
-            echo "" >> "$HOME/.bashrc"
-            echo "$bun_config" >> "$HOME/.bashrc"
-            debug "Added Bun configuration to .bashrc"
-        fi
+        append_to_file_once "$HOME/.bashrc" ">>> Bun init >>>" "$bun_config"
+        debug "Bun configuration present in .bashrc"
     fi
-    
+
     success "Bun PATH configured in shell profiles"
 }
 
@@ -167,12 +175,6 @@ verify_bun() {
         success "✓ bun command working"
     elif command_exists bun; then
         warn "bun --help failed"
-    fi
-    
-    # Check installation directory
-    if ! verify_file_or_dir "$HOME/.bun" "Bun directory" 1; then
-        # Non-critical, just a warning
-        :
     fi
     
     if [[ $failed -gt 0 ]]; then

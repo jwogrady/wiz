@@ -2,19 +2,27 @@
 # ==============================================================================
 # Wiz - Terminal Magic: Common Utilities Library
 # ==============================================================================
-# Provides colorized logging, error handling, atomic file operations, and
-# environment detection for all Wiz scripts.
+# Core utilities: colorized logging, error handling, run/run_stream, OS/shell
+# detection, file helpers, and hook runner. Sources pkg.sh, download.sh, and
+# ui.sh so callers only need a single source statement.
 #
 # Usage:
 #   source /path/to/lib/common.sh
 #
-# Functions:
+# Functions (direct):
 #   - log, warn, error, success, debug, progress
-#   - run (dry-run aware command execution)
-#   - atomic_write (idempotent file updates)
-#   - backup_file (safe backups before modifications)
-#   - command_exists, package_installed
-#   - detect_os, detect_shell, is_wsl
+#   - run, run_stream, run_shell
+#
+# Module-specific helpers (defined in lib/module-base.sh):
+#   - check_command_installed, add_to_path, verify_command_exists, verify_file_or_dir
+#   - backup_file, append_to_file_once
+#   - command_exists, detect_os, detect_shell, is_wsl
+#   - run_hooks
+#
+# Functions (via sourced sub-libraries):
+#   - pkg.sh:      detect_pkg_manager, install_package, install_packages, ...
+#   - download.sh: verify_sha256, download_to_temp, curl_or_wget_download, ...
+#   - ui.sh:       progress_bar, spinner, show_banner
 #
 # Environment Variables:
 #   WIZ_DRY_RUN       - Set to 1 to enable dry-run mode
@@ -74,19 +82,29 @@ WIZ_VERBOSE="${WIZ_VERBOSE:-0}"
 WIZ_FORCE_REINSTALL="${WIZ_FORCE_REINSTALL:-0}"
 WIZ_STOP_ON_ERROR="${WIZ_STOP_ON_ERROR:-1}"
 
-# Backward compatibility aliases (deprecated, use WIZ_ prefix instead)
-LOG_DIR="$WIZ_LOG_DIR"
-CACHE_DIR="$WIZ_CACHE_DIR"
-SSH_FINGERPRINT_CACHE_DIR="$WIZ_SSH_FINGERPRINT_CACHE_DIR"
-DRY_RUN="$WIZ_DRY_RUN"
-LOG_LEVEL="$WIZ_LOG_LEVEL"
-LOG_FILE="$WIZ_LOG_FILE"
-VERBOSE="$WIZ_VERBOSE"
+# Tool version overrides (empty = use each module's own default/latest)
+WIZ_NODE_VERSION="${WIZ_NODE_VERSION:-}"
+WIZ_BUN_VERSION="${WIZ_BUN_VERSION:-}"
+WIZ_STARSHIP_VERSION="${WIZ_STARSHIP_VERSION:-}"
+
+# Backward compatibility aliases — DEPRECATED.
+# Use the WIZ_ prefixed variables instead. These aliases will be removed in a
+# future release. Any code still referencing LOG_DIR, CACHE_DIR, DRY_RUN,
+# LOG_LEVEL, LOG_FILE, or VERBOSE should be updated to use WIZ_LOG_DIR,
+# WIZ_CACHE_DIR, WIZ_DRY_RUN, WIZ_LOG_LEVEL, WIZ_LOG_FILE, or WIZ_VERBOSE.
+LOG_DIR="$WIZ_LOG_DIR"           # deprecated: use WIZ_LOG_DIR
+CACHE_DIR="$WIZ_CACHE_DIR"       # deprecated: use WIZ_CACHE_DIR
+SSH_FINGERPRINT_CACHE_DIR="$WIZ_SSH_FINGERPRINT_CACHE_DIR"  # deprecated: use WIZ_SSH_FINGERPRINT_CACHE_DIR
+DRY_RUN="$WIZ_DRY_RUN"           # deprecated: use WIZ_DRY_RUN
+LOG_LEVEL="$WIZ_LOG_LEVEL"       # deprecated: use WIZ_LOG_LEVEL
+LOG_FILE="$WIZ_LOG_FILE"         # deprecated: use WIZ_LOG_FILE
+VERBOSE="$WIZ_VERBOSE"           # deprecated: use WIZ_VERBOSE
 
 # Export all WIZ_ variables for subprocesses
 export WIZ_VERSION WIZ_CODENAME
 export WIZ_ROOT WIZ_LOG_DIR WIZ_CACHE_DIR WIZ_STATE_DIR WIZ_SSH_FINGERPRINT_CACHE_DIR
 export WIZ_DRY_RUN WIZ_LOG_LEVEL WIZ_LOG_FILE WIZ_VERBOSE WIZ_FORCE_REINSTALL WIZ_STOP_ON_ERROR
+export WIZ_NODE_VERSION WIZ_BUN_VERSION WIZ_STARSHIP_VERSION
 # Backward compat exports
 export LOG_DIR LOG_FILE DRY_RUN LOG_LEVEL VERBOSE
 
@@ -103,12 +121,15 @@ wiz_config_get() {
         log_level)    echo "$WIZ_LOG_LEVEL" ;;
         log_file)     echo "$WIZ_LOG_FILE" ;;
         force)        echo "$WIZ_FORCE_REINSTALL" ;;
-        stop_on_error) echo "$WIZ_STOP_ON_ERROR" ;;
-        root)         echo "$WIZ_ROOT" ;;
-        log_dir)      echo "$WIZ_LOG_DIR" ;;
-        cache_dir)    echo "$WIZ_CACHE_DIR" ;;
-        state_dir)    echo "$WIZ_STATE_DIR" ;;
-        *)            echo "" ;;
+        stop_on_error)    echo "$WIZ_STOP_ON_ERROR" ;;
+        root)             echo "$WIZ_ROOT" ;;
+        log_dir)          echo "$WIZ_LOG_DIR" ;;
+        cache_dir)        echo "$WIZ_CACHE_DIR" ;;
+        state_dir)        echo "$WIZ_STATE_DIR" ;;
+        node_version)     echo "$WIZ_NODE_VERSION" ;;
+        bun_version)      echo "$WIZ_BUN_VERSION" ;;
+        starship_version) echo "$WIZ_STARSHIP_VERSION" ;;
+        *)                echo "" ;;
     esac
 }
 
@@ -141,6 +162,18 @@ wiz_config_set() {
             WIZ_STOP_ON_ERROR="$value"
             export WIZ_STOP_ON_ERROR
             ;;
+        node_version)
+            WIZ_NODE_VERSION="$value"
+            export WIZ_NODE_VERSION
+            ;;
+        bun_version)
+            WIZ_BUN_VERSION="$value"
+            export WIZ_BUN_VERSION
+            ;;
+        starship_version)
+            WIZ_STARSHIP_VERSION="$value"
+            export WIZ_STARSHIP_VERSION
+            ;;
         *)
             warn "Unknown config key: $key"
             return 1
@@ -171,6 +204,17 @@ mkdir -p "$WIZ_LOG_DIR"
 mkdir -p "$WIZ_SSH_FINGERPRINT_CACHE_DIR"
 mkdir -p "$WIZ_STATE_DIR"
 
+# Open a persistent append-mode file descriptor for the log file.
+# Uses {varname}>> (Bash 4.1+) so the shell selects an unused FD.
+# All _write_log calls write to this FD instead of re-opening the file on
+# every message.  The guard prevents duplicate opens when common.sh is
+# re-sourced in a subshell that already inherited the FD.
+if [[ -z "${_WIZ_LOG_FD:-}" ]]; then
+    exec {_WIZ_LOG_FD}>>"$WIZ_LOG_FILE"
+    export _WIZ_LOG_FD
+    trap 'exec {_WIZ_LOG_FD}>&-' EXIT
+fi
+
 # --- Logging Functions ---
 # All logging functions write to both stdout/stderr (for user visibility) and
 # the log file (for troubleshooting). Log levels control verbosity:
@@ -190,12 +234,16 @@ timestamp() {
 _write_log() {
     local level="$1"
     shift
-    echo "[$(timestamp)] [$level] $*" >> "$LOG_FILE"
+    if [[ -n "${_WIZ_LOG_FD:-}" ]]; then
+        echo "[$(timestamp)] [$level] $*" >&"$_WIZ_LOG_FD"
+    else
+        echo "[$(timestamp)] [$level] $*" >> "$WIZ_LOG_FILE"
+    fi
 }
 
 # debug: Debug-level log (dim cyan) - level 0
 debug() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 0 ]] || return 0
     # Defensive color variable initialization
     local dim="${DIM:-}"
@@ -213,7 +261,7 @@ debug() {
 
 # log: Info-level log (green) - level 1
 log() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 1 ]] || return 0
     # Ensure color variables are available (defensive)
     local green="${GREEN:-}"
@@ -229,7 +277,7 @@ log() {
 
 # warn: Warning-level log (yellow) - level 2
 warn() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 2 ]] || return 0
     echo -e "${YELLOW}⚠${NC} $*" >&2
     # Only call _write_log if it's available (defensive for trap contexts)
@@ -293,9 +341,11 @@ progress() {
 }
 
 # --- Command Execution ---
-# Two execution modes:
-#   run       - Safe execution, no shell interpretation (preferred)
-#   run_shell - Shell execution with eval (use only when pipes/redirects needed)
+# Three execution modes:
+#   run        - Safe execution, no shell interpretation (preferred); captures output
+#   run_stream - Safe execution, no shell interpretation; streams output to terminal
+#                Use for long-running commands: apt-get, nvm install, npm, etc.
+#   run_shell  - Shell execution with eval; use only when pipes/redirects needed
 #
 # Features:
 # - Dry-run mode support (shows commands without executing)
@@ -303,12 +353,12 @@ progress() {
 # - Verbose mode support for debugging
 # - Proper error handling and exit code propagation
 
-# _run_common_pre: Shared pre-execution logic
+# _wiz_run_pre: Shared pre-execution logic
 # Returns 0 if should skip execution (dry-run), 1 if should execute
-_run_common_pre() {
+_wiz_run_pre() {
     local display_cmd="$1"
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         local dim="${DIM:-\033[2m}"
         local nc="${NC:-\033[0m}"
         echo -e "${dim}[DRY-RUN]${nc} $display_cmd"
@@ -316,18 +366,18 @@ _run_common_pre() {
         return 0
     fi
 
-    [[ $VERBOSE -eq 1 ]] && debug "Executing: $display_cmd"
+    [[ ${WIZ_VERBOSE:-0} -eq 1 ]] && debug "Executing: $display_cmd"
     declare -f _write_log >/dev/null 2>&1 && _write_log "EXEC" "$display_cmd"
     return 1
 }
 
-# _run_common_post: Shared post-execution logic
-_run_common_post() {
+# _wiz_run_post: Shared post-execution logic
+_wiz_run_post() {
     local exit_code="$1"
     local display_cmd="$2"
 
     if [[ $exit_code -eq 0 ]]; then
-        [[ $VERBOSE -eq 1 ]] && debug "Success: $display_cmd"
+        [[ ${WIZ_VERBOSE:-0} -eq 1 ]] && debug "Success: $display_cmd"
         return 0
     fi
 
@@ -365,7 +415,7 @@ run() {
         done
     fi
 
-    if _run_common_pre "$display_cmd"; then
+    if _wiz_run_pre "$display_cmd"; then
         return 0
     fi
 
@@ -377,7 +427,37 @@ run() {
     # Filter harmless systemd warnings from apt
     echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
 
-    _run_common_post "$exit_code" "$display_cmd"
+    _wiz_run_post "$exit_code" "$display_cmd"
+}
+
+# run_stream: Execute command safely, streaming output directly to terminal
+# Usage: run_stream command arg1 arg2 ...
+# Example: run_stream sudo apt-get install -y curl wget
+# Example: run_stream npm config set fund false
+# Use instead of run() for long-running commands where the user should see output.
+# stdout/stderr are passed through; the log file receives EXEC/SUCCESS/ERROR records only.
+# Returns: Exit code of the executed command (or 0 in dry-run mode)
+# NOTE: Does NOT support pipes, redirects, or shell expansions. Use run_shell for those.
+run_stream() {
+    # Build display string (IFS may be set to newline)
+    local display_cmd="${*}"
+    if [[ "$IFS" != $' \t\n' ]]; then
+        display_cmd=""
+        local arg
+        for arg in "$@"; do
+            display_cmd="${display_cmd:+$display_cmd }$arg"
+        done
+    fi
+
+    if _wiz_run_pre "$display_cmd"; then
+        return 0
+    fi
+
+    # Execute directly — stdout/stderr stream to terminal unchanged
+    local exit_code=0
+    "$@" || exit_code=$?
+
+    _wiz_run_post "$exit_code" "$display_cmd"
 }
 
 # run_shell: Execute command string with shell interpretation
@@ -389,7 +469,7 @@ run() {
 run_shell() {
     local cmd="$*"
 
-    if _run_common_pre "$cmd"; then
+    if _wiz_run_pre "$cmd"; then
         return 0
     fi
 
@@ -401,17 +481,19 @@ run_shell() {
     # Filter harmless systemd warnings from apt
     echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
 
-    _run_common_post "$exit_code" "$cmd"
+    _wiz_run_post "$exit_code" "$cmd"
 }
 
 # --- Environment Detection ---
 
 # detect_os: Detect operating system
+# Reads /etc/os-release with grep rather than sourcing it to avoid polluting
+# the script's namespace with OS variables (NAME, VERSION, ID, etc.).
 detect_os() {
     if [[ -f /etc/os-release ]]; then
-        # shellcheck source=/dev/null
-        source /etc/os-release
-        echo "${ID:-unknown}"
+        local os_id
+        os_id="$(grep -m1 '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"' | tr -d "'")"
+        echo "${os_id:-unknown}"
     else
         echo "unknown"
     fi
@@ -477,15 +559,15 @@ detect_windows_user() {
     
     # Fallback: scan /mnt/c/Users/ for first non-system directory
     if [[ -d /mnt/c/Users ]]; then
+        local user_dir dir_basename
         for user_dir in /mnt/c/Users/*; do
             [[ -d "$user_dir" ]] || continue
-            local basename
-            basename="$(basename "$user_dir")"
+            dir_basename="$(basename "$user_dir")"
             # Skip system directories
-            [[ "$basename" == "Public" ]] && continue
-            [[ "$basename" == "Default" ]] && continue
-            [[ "$basename" == "Default User" ]] && continue
-            echo "$basename"
+            [[ "$dir_basename" == "Public" ]]       && continue
+            [[ "$dir_basename" == "Default" ]]      && continue
+            [[ "$dir_basename" == "Default User" ]] && continue
+            echo "$dir_basename"
             return 0
         done
     fi
@@ -493,76 +575,7 @@ detect_windows_user() {
     return 1
 }
 
-# extract_ssh_keys_from_archive: Extract SSH keys from tar.gz archive
-# Usage: extract_ssh_keys_from_archive <archive_path> <target_dir>
-extract_ssh_keys_from_archive() {
-    local archive="$1"
-    local target_dir="$2"
-    
-    [[ -f "$archive" ]] || return 1
-    
-    # Extract archive to temp directory
-    local temp_extract
-    temp_extract="$(mktemp -d)"
-    tar --no-absolute-names -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
-        rm -rf "$temp_extract"
-        return 1
-    }
-    
-    # Check if archive contains .ssh directory
-    if [[ -d "$temp_extract/.ssh" ]]; then
-        # Archive contains .ssh directory, copy all files from it
-        for keyfile in "$temp_extract/.ssh"/*; do
-            [[ -f "$keyfile" ]] || continue
-            local basename
-            basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
-            
-            # Set correct permissions
-            if [[ "$basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$basename" 2>/dev/null || true
-            else
-                chmod 644 "$target_dir/$basename" 2>/dev/null || true
-            fi
-        done
-    else
-        # Archive contents are directly in root, copy all key files
-        for keyfile in "$temp_extract"/*; do
-            [[ -f "$keyfile" ]] || continue
-            local basename
-            basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
-            
-            # Set correct permissions
-            if [[ "$basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$basename" 2>/dev/null || true
-            else
-                chmod 644 "$target_dir/$basename" 2>/dev/null || true
-            fi
-        done
-    fi
-    
-    # Clean up temp directory
-    rm -rf "$temp_extract"
-    return 0
-}
-
 # --- File Operations ---
-
-# atomic_write: Write content to file only if it differs (idempotent)
-# Usage: atomic_write <file> <content>
-atomic_write() {
-    local file="$1"
-    local content="$2"
-    
-    if [[ -f "$file" ]] && echo "$content" | diff -q "$file" - >/dev/null 2>&1; then
-        debug "File unchanged, skipping write: $file"
-        return 0
-    fi
-    
-    debug "Writing file: $file"
-    echo "$content" > "$file"
-}
 
 # backup_file: Create timestamped backup before modifying
 # Usage: backup_file <file>
@@ -587,14 +600,19 @@ append_to_file_once() {
     local file="$1"
     local marker="$2"
     local content="$3"
-    
+
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+        log "[DRY-RUN] Would append to $file (marker: $marker)"
+        return 0
+    fi
+
     [[ -f "$file" ]] || touch "$file"
-    
+
     if grep -Fq "$marker" "$file" 2>/dev/null; then
         debug "Content already present in $file (marker: $marker)"
         return 0
     fi
-    
+
     debug "Appending to $file"
     echo "$content" >> "$file"
 }
@@ -607,595 +625,17 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# --- Package Manager Abstraction ---
-# Supports: apt (Debian/Ubuntu), dnf/yum (Fedora/RHEL), pacman (Arch), brew (macOS)
-
-# Cache the detected package manager to avoid repeated detection
-_WIZ_PKG_MANAGER=""
-
-# detect_pkg_manager: Detect the system's package manager
-# Usage: pkg_mgr=$(detect_pkg_manager)
-# Returns: apt, dnf, yum, pacman, brew, or "unknown"
-detect_pkg_manager() {
-    # Return cached value if available
-    if [[ -n "$_WIZ_PKG_MANAGER" ]]; then
-        echo "$_WIZ_PKG_MANAGER"
-        return 0
-    fi
-
-    if command_exists apt-get; then
-        _WIZ_PKG_MANAGER="apt"
-    elif command_exists dnf; then
-        _WIZ_PKG_MANAGER="dnf"
-    elif command_exists yum; then
-        _WIZ_PKG_MANAGER="yum"
-    elif command_exists pacman; then
-        _WIZ_PKG_MANAGER="pacman"
-    elif command_exists brew; then
-        _WIZ_PKG_MANAGER="brew"
-    else
-        _WIZ_PKG_MANAGER="unknown"
-    fi
-
-    echo "$_WIZ_PKG_MANAGER"
-}
-
-# package_installed: Check if a package is installed (cross-platform)
-# Usage: package_installed <package>
-package_installed() {
-    local pkg="$1"
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    case "$pkg_mgr" in
-        apt)
-            dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"
-            ;;
-        dnf|yum)
-            rpm -q "$pkg" >/dev/null 2>&1
-            ;;
-        pacman)
-            pacman -Qi "$pkg" >/dev/null 2>&1
-            ;;
-        brew)
-            brew list "$pkg" >/dev/null 2>&1
-            ;;
-        *)
-            # Unknown package manager - assume not installed
-            return 1
-            ;;
-    esac
-}
-
-# pkg_update: Update package manager cache (cross-platform)
-# Usage: pkg_update
-pkg_update() {
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    case "$pkg_mgr" in
-        apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get update -y
-            ;;
-        dnf)
-            run sudo dnf check-update -y || true  # dnf returns 100 if updates available
-            ;;
-        yum)
-            run sudo yum check-update -y || true
-            ;;
-        pacman)
-            run sudo pacman -Sy --noconfirm
-            ;;
-        brew)
-            run brew update
-            ;;
-        *)
-            warn "Unknown package manager, skipping update"
-            return 1
-            ;;
-    esac
-}
-
-# pkg_upgrade: Upgrade all installed packages (cross-platform)
-# Usage: pkg_upgrade
-pkg_upgrade() {
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    case "$pkg_mgr" in
-        apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get upgrade -y \
-                -o Dpkg::Options::=--force-confdef \
-                -o Dpkg::Options::=--force-confold
-            ;;
-        dnf)
-            run sudo dnf upgrade -y
-            ;;
-        yum)
-            run sudo yum upgrade -y
-            ;;
-        pacman)
-            run sudo pacman -Syu --noconfirm
-            ;;
-        brew)
-            run brew upgrade
-            ;;
-        *)
-            warn "Unknown package manager, skipping upgrade"
-            return 1
-            ;;
-    esac
-}
-
-# pkg_clean: Clean package manager cache and remove unused packages (cross-platform)
-# Usage: pkg_clean
-pkg_clean() {
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    case "$pkg_mgr" in
-        apt)
-            run env DEBIAN_FRONTEND=noninteractive sudo apt-get autoremove -y || true
-            run sudo apt-get clean || true
-            ;;
-        dnf)
-            run sudo dnf autoremove -y || true
-            run sudo dnf clean all || true
-            ;;
-        yum)
-            run sudo yum autoremove -y || true
-            run sudo yum clean all || true
-            ;;
-        pacman)
-            # Remove orphaned packages
-            run sudo pacman -Rns "$(pacman -Qdtq)" --noconfirm 2>/dev/null || true
-            run sudo pacman -Sc --noconfirm || true
-            ;;
-        brew)
-            run brew cleanup || true
-            ;;
-        *)
-            warn "Unknown package manager, skipping cleanup"
-            return 1
-            ;;
-    esac
-}
-
-# install_package: Install package if not already installed (cross-platform)
-# Usage: install_package <package>
-install_package() {
-    local pkg="$1"
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    if package_installed "$pkg"; then
-        debug "Package already installed: $pkg"
-        return 0
-    fi
-
-    log "Installing package: $pkg"
-
-    case "$pkg_mgr" in
-        apt)
-            run env DEBIAN_FRONTEND=noninteractive \
-                DEBCONF_NONINTERACTIVE_SEEN=true \
-                sudo -E apt-get install -y \
-                -o Dpkg::Options::=--force-confdef \
-                -o Dpkg::Options::=--force-confold \
-                -o DPkg::Pre-Install-Pkgs::= \
-                "$pkg"
-            ;;
-        dnf)
-            run sudo dnf install -y "$pkg"
-            ;;
-        yum)
-            run sudo yum install -y "$pkg"
-            ;;
-        pacman)
-            run sudo pacman -S --noconfirm "$pkg"
-            ;;
-        brew)
-            run brew install "$pkg"
-            ;;
-        *)
-            error "Unknown package manager: $pkg_mgr"
-            return 1
-            ;;
-    esac
-}
-
-# install_packages: Install multiple packages (cross-platform)
-# Usage: install_packages package1 package2 package3
-install_packages() {
-    local packages=("$@")
-    local to_install=()
-    local pkg_mgr
-    pkg_mgr=$(detect_pkg_manager)
-
-    for pkg in "${packages[@]}"; do
-        if ! package_installed "$pkg"; then
-            to_install+=("$pkg")
-        fi
-    done
-
-    if [[ ${#to_install[@]} -eq 0 ]]; then
-        debug "All packages already installed"
-        return 0
-    fi
-
-    log "Installing ${#to_install[@]} packages: ${to_install[*]}"
-
-    case "$pkg_mgr" in
-        apt)
-            run env DEBIAN_FRONTEND=noninteractive \
-                DEBCONF_NONINTERACTIVE_SEEN=true \
-                sudo -E apt-get install -y \
-                -o Dpkg::Options::=--force-confdef \
-                -o Dpkg::Options::=--force-confold \
-                -o DPkg::Pre-Install-Pkgs::= \
-                "${to_install[@]}"
-            ;;
-        dnf)
-            run sudo dnf install -y "${to_install[@]}"
-            ;;
-        yum)
-            run sudo yum install -y "${to_install[@]}"
-            ;;
-        pacman)
-            run sudo pacman -S --noconfirm "${to_install[@]}"
-            ;;
-        brew)
-            run brew install "${to_install[@]}"
-            ;;
-        *)
-            error "Unknown package manager: $pkg_mgr"
-            return 1
-            ;;
-    esac
-
-    # Verify all packages were installed
-    for pkg in "${to_install[@]}"; do
-        if ! package_installed "$pkg"; then
-            error "Package installation verification failed: $pkg"
-            return 1
-        fi
-    done
-
-    return 0
-}
-
-# --- Progress Indicators ---
-
-# progress_bar: Display a progress bar with elapsed time and ETA
-# Usage: progress_bar <current> <total> <description> [start_time]
-progress_bar() {
-    local current=$1
-    local total=$2
-    local desc="${3:-}"
-    local start_time="${4:-}"
-    local percent=$((current * 100 / total))
-    local filled=$((percent / 2))
-    local empty=$((50 - filled))
-    
-    # Defensive color variable initialization
-    local blue="${BLUE:-}"
-    local nc="${NC:-}"
-    [[ -z "$blue" ]] && blue='\033[0;34m'
-    [[ -z "$nc" ]] && nc='\033[0m'
-    
-    # Calculate elapsed time and ETA if start_time provided
-    local time_info=""
-    if [[ -n "$start_time" ]] && [[ "$start_time" != "0" ]] && [[ "$start_time" =~ ^[0-9]+$ ]]; then
-        local elapsed
-        elapsed=$(($(date +%s) - start_time))
-        local elapsed_str
-        elapsed_str=$(printf "%02d:%02d" $((elapsed / 60)) $((elapsed % 60)))
-        
-        # Estimate remaining time (simple linear estimation)
-        if [[ $current -gt 0 ]] && [[ $elapsed -gt 0 ]]; then
-            local avg_time_per_module
-            avg_time_per_module=$((elapsed / current))
-            local remaining_modules
-            remaining_modules=$((total - current))
-            local eta_seconds
-            eta_seconds=$((avg_time_per_module * remaining_modules))
-            local eta_str
-            eta_str=$(printf "%02d:%02d" $((eta_seconds / 60)) $((eta_seconds % 60)))
-            time_info=" [${elapsed_str} elapsed, ~${eta_str} remaining]"
-        else
-            time_info=" [${elapsed_str} elapsed]"
-        fi
-    fi
-    
-    printf "\r${blue}[%-50s]${nc} %3d%% %s%s" \
-        "$(printf '#%.0s' $(seq 1 $filled))$(printf ' %.0s' $(seq 1 $empty))" \
-        "$percent" \
-        "$desc" \
-        "$time_info"
-    
-    if [[ $current -eq $total ]]; then
-        echo
-    fi
-}
-
-# spinner: Show a spinner while a command runs
-# Usage: spinner <command> [description]
-spinner() {
-    local cmd="$1"
-    local desc="${2:-Processing...}"
-    local pid
-    local delay=0.1
-    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    
-    eval "$cmd" &
-    pid=$!
-    
-    # Defensive color variable initialization
-    local blue="${BLUE:-}"
-    local nc="${NC:-}"
-    local green="${GREEN:-}"
-    [[ -z "$blue" ]] && blue='\033[0;34m'
-    [[ -z "$nc" ]] && nc='\033[0m'
-    [[ -z "$green" ]] && green='\033[0;32m'
-    
-    while kill -0 $pid 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf "\r${blue}%s${nc} %s" "${spinstr:0:1}" "$desc"
-        spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-    done
-    
-    wait $pid
-    local exit_code=$?
-    printf "\r${green}✓${nc} %s\n" "$desc"
-    
-    return $exit_code
-}
-
-# --- Banner Display ---
-
-# show_banner: Display application banner
-show_banner() {
-    cat << 'EOF'
-
-╔════════════════════════════════════════════════════════════╗
-║                                                            ║
-║   🌌  WIZ - TERMINAL MAGIC  ✨                            ║
-║                                                            ║
-║   Modular Developer Environment Bootstrapper              ║
-║   https://github.com/jwogrady/wiz                          ║
-║                                                            ║
-╚════════════════════════════════════════════════════════════╝
-
-EOF
-}
-
-# --- Repository Management ---
-
-# prepare_code_repo: Ensures ~/code exists and cleans repo_dir for fresh clone
-# Usage: prepare_code_repo <repo_dir>
-prepare_code_repo() {
-    local repo_dir="$1"
-    
-    mkdir -p "$HOME/code"
-    
-    if [[ -d "$repo_dir" ]]; then
-        warn "Removing existing directory: $repo_dir"
-        run rm -rf "$repo_dir"
-    fi
-}
-
-# --- Download and Installation Helpers ---
-
-# curl_or_wget_download: Download using curl or wget with fallback
-# Usage: curl_or_wget_download <url> [output_file] [error_message]
-curl_or_wget_download() {
-    local url="$1"
-    local output_file="${2:-}"
-    local error_msg="${3:-Failed to download}"
-
-    if command_exists curl; then
-        if [[ -n "$output_file" ]]; then
-            run curl -fsSL -o "$output_file" "$url" || {
-                warn "curl download failed, trying wget..."
-                if command_exists wget; then
-                    run wget -q -O "$output_file" "$url" || {
-                        error "$error_msg"
-                        return 1
-                    }
-                else
-                    error "$error_msg: Neither curl nor wget available"
-                    return 1
-                fi
-            }
-        else
-            run curl -fsSL "$url" || {
-                warn "curl download failed, trying wget..."
-                if command_exists wget; then
-                    run wget -qO- "$url" || {
-                        error "$error_msg"
-                        return 1
-                    }
-                else
-                    error "$error_msg: Neither curl nor wget available"
-                    return 1
-                fi
-            }
-        fi
-    elif command_exists wget; then
-        if [[ -n "$output_file" ]]; then
-            run wget -q -O "$output_file" "$url" || {
-                error "$error_msg"
-                return 1
-            }
-        else
-            run wget -qO- "$url" || {
-                error "$error_msg"
-                return 1
-            }
-        fi
-    else
-        error "$error_msg: Neither curl nor wget available"
-        return 1
-    fi
-
-    return 0
-}
-
-# curl_or_wget_pipe: Pipe download directly to bash
-# Usage: curl_or_wget_pipe <url> [additional_args] [error_message]
-# NOTE: Uses run_shell because pipes require shell interpretation
-curl_or_wget_pipe() {
-    local url="$1"
-    local additional_args="${2:-}"
-    local error_msg="${3:-Failed to download and execute installer}"
-
-    # Quote URL for shell safety
-    local quoted_url
-    quoted_url=$(printf '%q' "$url")
-
-    if command_exists curl; then
-        run_shell "curl -fsSL $quoted_url | bash $additional_args" || {
-            warn "curl installation failed, trying wget..."
-            if command_exists wget; then
-                run_shell "wget -qO- $quoted_url | bash $additional_args" || {
-                    error "$error_msg"
-                    return 1
-                }
-            else
-                error "$error_msg: Neither curl nor wget available"
-                return 1
-            fi
-        }
-    elif command_exists wget; then
-        run_shell "wget -qO- $quoted_url | bash $additional_args" || {
-            error "$error_msg"
-            return 1
-        }
-    else
-        error "$error_msg: Neither curl nor wget available"
-        return 1
-    fi
-
-    return 0
-}
-
-# get_command_version: Extract version from command output consistently
-# Usage: version=$(get_command_version <command> [version_pattern])
-get_command_version() {
-    local cmd="$1"
-    local pattern="${2:-version}"
-    
-    if ! command_exists "$cmd"; then
-        echo "unknown"
-        return 1
-    fi
-    
-    # Try different version extraction methods with timeout and stdin redirect
-    local version=""
-    
-    # Try --version first (most common)
-    if version=$(timeout 2 "$cmd" --version </dev/null 2>/dev/null | head -n1 | awk '{print $NF}' | sed 's/^v//' 2>/dev/null); then
-        [[ -n "$version" ]] && echo "$version" && return 0
-    fi
-    
-    # Try -v
-    if version=$(timeout 2 "$cmd" -v </dev/null 2>/dev/null | head -n1 | awk '{print $NF}' | sed 's/^v//' 2>/dev/null); then
-        [[ -n "$version" ]] && echo "$version" && return 0
-    fi
-    
-    # Try -version
-    if version=$(timeout 2 "$cmd" -version </dev/null 2>/dev/null | head -n1 | awk '{print $NF}' | sed 's/^v//' 2>/dev/null); then
-        [[ -n "$version" ]] && echo "$version" && return 0
-    fi
-    
-    # Fallback: try to extract version from first line
-    if version=$(timeout 2 "$cmd" --version </dev/null 2>/dev/null | head -n1 2>/dev/null); then
-        # Extract first version-like string
-        version=$(echo "$version" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)
-        [[ -n "$version" ]] && echo "$version" && return 0
-    fi
-    
-    echo "unknown"
-    return 1
-}
-
-# check_command_installed: Check if command is installed
-# Usage: if check_command_installed <command> [command_name]; then return; fi
-# Returns 0 if already installed and should skip, 1 if should install
-# Note: Caller should handle module_skip if returning 0
-check_command_installed() {
-    local cmd="$1"
-    local cmd_name="${2:-$cmd}"
-    
-    if command_exists "$cmd"; then
-        local current_version
-        current_version="$(get_command_version "$cmd")"
-        
-        if [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
-            log "${cmd_name} already installed: v${current_version}"
-            return 0  # Skip installation
-        else
-            log "${cmd_name} already installed: v${current_version} (forcing reinstall)"
-        fi
-    fi
-    
-    return 1  # Should install
-}
-
-# add_to_path: Add directory to PATH if not already present
-# Usage: add_to_path <directory>
-add_to_path() {
-    local dir="$1"
-    
-    [[ -d "$dir" ]] || return 1
-    
-    if [[ ":$PATH:" != *":$dir:"* ]]; then
-        export PATH="$dir:$PATH"
-        debug "Added $dir to PATH"
-    fi
-    
-    return 0
-}
-
-# verify_command_exists: Verify command exists and optionally get version
-# Usage: verify_command_exists <command> [display_name]
-# Returns 0 on success, 1 on failure (caller handles failed counter)
-verify_command_exists() {
-    local cmd="$1"
-    local display_name="${2:-$cmd}"
-    
-    if ! command_exists "$cmd"; then
-        error "${display_name} command not found"
-        return 1
-    else
-        local version
-        version="$(get_command_version "$cmd")"
-        success "✓ ${display_name} v${version}"
-        return 0
-    fi
-}
-
-# verify_file_or_dir: Verify file or directory exists
-# Usage: verify_file_or_dir <path> [display_name] [is_warning]
-# Returns 0 if exists, 1 if not (caller handles failed counter)
-verify_file_or_dir() {
-    local path="$1"
-    local display_name="${2:-$path}"
-    local is_warning="${3:-0}"
-    
-    if [[ -e "$path" ]]; then
-        success "✓ ${display_name}"
-        return 0
-    else
-        if [[ $is_warning -eq 1 ]]; then
-            warn "${display_name} not found: $path"
-        else
-            error "${display_name} not found: $path"
-        fi
-        return 1
-    fi
-}
+# --- Sub-libraries ---
+# These three files are sourced here rather than at the top of the file because
+# they call log(), command_exists(), run(), and run_stream() — all of which must
+# be defined before the source statements execute.
+# DO NOT move these source calls above the logging or run-execution sections.
+# shellcheck source=pkg.sh
+source "${WIZ_ROOT}/lib/pkg.sh"
+# shellcheck source=download.sh
+source "${WIZ_ROOT}/lib/download.sh"
+# shellcheck source=ui.sh
+source "${WIZ_ROOT}/lib/ui.sh"
 
 # --- Hooks System ---
 # Allows extensibility through user-defined scripts in hooks directories
@@ -1251,39 +691,16 @@ run_hooks() {
     return $failed
 }
 
-# run_hook_if_exists: Run a single named hook file if it exists
-# Usage: run_hook_if_exists "pre-install/setup.sh" [args...]
-run_hook_if_exists() {
-    local hook_path="$1"
-    shift
-    local full_path="${WIZ_HOOKS_DIR}/${hook_path}"
-
-    [[ -x "$full_path" ]] || return 0
-
-    debug "Running hook: $hook_path"
-    if wiz_is_dry_run; then
-        log "[DRY-RUN] Would run hook: $hook_path"
-        return 0
-    fi
-
-    "$full_path" "$@"
-}
-
 # --- Export Functions ---
+# Note: pkg.sh, download.sh, and ui.sh export their own functions when sourced above.
 export -f wiz_config_get wiz_config_set wiz_is_dry_run wiz_is_verbose wiz_is_force
-export -f run_hooks run_hook_if_exists
-export -f timestamp log warn error success debug progress
-export -f run run_shell _run_common_pre _run_common_post
-export -f atomic_write backup_file append_to_file_once
-export -f command_exists detect_pkg_manager package_installed
-export -f pkg_update pkg_upgrade pkg_clean
-export -f install_package install_packages
+export -f run_hooks
+export -f timestamp log warn error success debug progress _write_log
+export -f run run_stream run_shell _wiz_run_pre _wiz_run_post
+export -f backup_file append_to_file_once
+export -f command_exists
 export -f detect_os detect_shell is_wsl is_macos is_linux sed_inplace
-export -f detect_windows_user extract_ssh_keys_from_archive
-export -f progress_bar spinner show_banner prepare_code_repo
-export -f curl_or_wget_download curl_or_wget_pipe get_command_version
-export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
-
+export -f detect_windows_user
 # --- Error Handling ---
 # Trap errors and print helpful message with line number and command
 # Set trap AFTER all functions are defined and logging is initialized
@@ -1294,59 +711,5 @@ trap 'if declare -f error >/dev/null 2>&1 && declare -f _write_log >/dev/null 2>
 debug "Common library loaded from: ${BASH_SOURCE[0]}"
 debug "Wiz root: $WIZ_ROOT"
 
-# ==============================================================================
-# SSH FINGERPRINT CACHING
-# ==============================================================================
-
-# get_cached_ssh_fingerprint: Get SSH key fingerprint with caching
-# Usage: fingerprint=$(get_cached_ssh_fingerprint <key_file>)
-# Returns: Fingerprint (MD5 or SHA256 format) or empty string on error
-get_cached_ssh_fingerprint() {
-    local key_file="$1"
-    [[ -f "$key_file" ]] || return 1
-    
-    local key_basename
-    key_basename="$(basename "$key_file")"
-    local cache_file="${SSH_FINGERPRINT_CACHE_DIR}/${key_basename}.fingerprint"
-    local cache_mtime_file="${SSH_FINGERPRINT_CACHE_DIR}/${key_basename}.mtime"
-    
-    # Get key file modification time
-    local key_mtime
-    key_mtime="$(stat -c %Y "$key_file" 2>/dev/null || stat -f %m "$key_file" 2>/dev/null || echo "0")"
-    
-    # Check if cache exists and is fresh
-    if [[ -f "$cache_file" ]] && [[ -f "$cache_mtime_file" ]]; then
-        local cached_mtime
-        cached_mtime="$(cat "$cache_mtime_file" 2>/dev/null || echo "0")"
-        
-        # If mtime matches, use cached fingerprint
-        if [[ "$key_mtime" == "$cached_mtime" ]]; then
-            local cached_fingerprint
-            cached_fingerprint="$(cat "$cache_file" 2>/dev/null || echo "")"
-            if [[ -n "$cached_fingerprint" ]]; then
-                debug "Using cached fingerprint for: $key_basename"
-                echo "$cached_fingerprint"
-                return 0
-            fi
-        fi
-    fi
-    
-    # Generate fingerprint (extract MD5 or SHA256 format)
-    if ! command_exists ssh-keygen; then
-        return 1
-    fi
-    
-    local fingerprint
-    fingerprint=$(ssh-keygen -lf "$key_file" 2>/dev/null | awk '{print $2}' || echo "")
-    
-    if [[ -n "$fingerprint" ]]; then
-        # Save to cache
-        echo "$fingerprint" > "$cache_file"
-        echo "$key_mtime" > "$cache_mtime_file"
-        debug "Cached fingerprint for: $key_basename"
-    fi
-    
-    echo "$fingerprint"
-}
 debug "Log file: $LOG_FILE"
-debug "Dry-run: $DRY_RUN"
+debug "Dry-run: $WIZ_DRY_RUN"
