@@ -11,7 +11,6 @@
 # Functions:
 #   - log, warn, error, success, debug, progress
 #   - run (dry-run aware command execution)
-#   - atomic_write (idempotent file updates)
 #   - backup_file (safe backups before modifications)
 #   - command_exists, package_installed
 #   - detect_os, detect_shell, is_wsl
@@ -569,21 +568,6 @@ detect_windows_user() {
 
 # --- File Operations ---
 
-# atomic_write: Write content to file only if it differs (idempotent)
-# Usage: atomic_write <file> <content>
-atomic_write() {
-    local file="$1"
-    local content="$2"
-    
-    if [[ -f "$file" ]] && echo "$content" | diff -q "$file" - >/dev/null 2>&1; then
-        debug "File unchanged, skipping write: $file"
-        return 0
-    fi
-    
-    debug "Writing file: $file"
-    echo "$content" > "$file"
-}
-
 # backup_file: Create timestamped backup before modifying
 # Usage: backup_file <file>
 backup_file() {
@@ -1035,21 +1019,6 @@ show_banner() {
 EOF
 }
 
-# --- Repository Management ---
-
-# prepare_code_repo: Ensures ~/code exists and cleans repo_dir for fresh clone
-# Usage: prepare_code_repo <repo_dir>
-prepare_code_repo() {
-    local repo_dir="$1"
-    
-    mkdir -p "$HOME/code"
-    
-    if [[ -d "$repo_dir" ]]; then
-        warn "Removing existing directory: $repo_dir"
-        run rm -rf "$repo_dir"
-    fi
-}
-
 # --- Download and Installation Helpers ---
 
 # verify_sha256: Compare a file's SHA-256 digest against an expected value
@@ -1149,44 +1118,6 @@ curl_or_wget_download() {
                 return 1
             }
         fi
-    else
-        error "$error_msg: Neither curl nor wget available"
-        return 1
-    fi
-
-    return 0
-}
-
-# curl_or_wget_pipe: Pipe download directly to bash
-# Usage: curl_or_wget_pipe <url> [additional_args] [error_message]
-# NOTE: Uses run_shell because pipes require shell interpretation
-curl_or_wget_pipe() {
-    local url="$1"
-    local additional_args="${2:-}"
-    local error_msg="${3:-Failed to download and execute installer}"
-
-    # Quote URL for shell safety
-    local quoted_url
-    quoted_url=$(printf '%q' "$url")
-
-    if command_exists curl; then
-        run_shell "curl -fsSL $quoted_url | bash $additional_args" || {
-            warn "curl installation failed, trying wget..."
-            if command_exists wget; then
-                run_shell "wget -qO- $quoted_url | bash $additional_args" || {
-                    error "$error_msg"
-                    return 1
-                }
-            else
-                error "$error_msg: Neither curl nor wget available"
-                return 1
-            fi
-        }
-    elif command_exists wget; then
-        run_shell "wget -qO- $quoted_url | bash $additional_args" || {
-            error "$error_msg"
-            return 1
-        }
     else
         error "$error_msg: Neither curl nor wget available"
         return 1
@@ -1366,37 +1297,19 @@ run_hooks() {
     return $failed
 }
 
-# run_hook_if_exists: Run a single named hook file if it exists
-# Usage: run_hook_if_exists "pre-install/setup.sh" [args...]
-run_hook_if_exists() {
-    local hook_path="$1"
-    shift
-    local full_path="${WIZ_HOOKS_DIR}/${hook_path}"
-
-    [[ -x "$full_path" ]] || return 0
-
-    debug "Running hook: $hook_path"
-    if wiz_is_dry_run; then
-        log "[DRY-RUN] Would run hook: $hook_path"
-        return 0
-    fi
-
-    "$full_path" "$@"
-}
-
 # --- Export Functions ---
 export -f wiz_config_get wiz_config_set wiz_is_dry_run wiz_is_verbose wiz_is_force
-export -f run_hooks run_hook_if_exists
+export -f run_hooks
 export -f timestamp log warn error success debug progress _write_log
 export -f run run_stream run_shell _run_common_pre _run_common_post
-export -f atomic_write backup_file append_to_file_once
+export -f backup_file append_to_file_once
 export -f command_exists detect_pkg_manager package_installed
 export -f pkg_update pkg_upgrade pkg_clean
 export -f install_package install_packages
 export -f detect_os detect_shell is_wsl is_macos is_linux sed_inplace
 export -f detect_windows_user
-export -f progress_bar spinner show_banner prepare_code_repo
-export -f curl_or_wget_download curl_or_wget_pipe get_command_version
+export -f progress_bar spinner show_banner
+export -f curl_or_wget_download get_command_version
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
 
 # --- Error Handling ---
