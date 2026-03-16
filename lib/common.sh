@@ -1432,59 +1432,5 @@ trap 'if declare -f error >/dev/null 2>&1 && declare -f _write_log >/dev/null 2>
 debug "Common library loaded from: ${BASH_SOURCE[0]}"
 debug "Wiz root: $WIZ_ROOT"
 
-# ==============================================================================
-# SSH FINGERPRINT CACHING
-# ==============================================================================
-
-# get_cached_ssh_fingerprint: Get SSH key fingerprint with caching
-# Usage: fingerprint=$(get_cached_ssh_fingerprint <key_file>)
-# Returns: Fingerprint (MD5 or SHA256 format) or empty string on error
-get_cached_ssh_fingerprint() {
-    local key_file="$1"
-    [[ -f "$key_file" ]] || return 1
-    
-    local key_basename
-    key_basename="$(basename "$key_file")"
-    local cache_file="${SSH_FINGERPRINT_CACHE_DIR}/${key_basename}.fingerprint"
-    local cache_mtime_file="${SSH_FINGERPRINT_CACHE_DIR}/${key_basename}.mtime"
-    
-    # Get key file modification time
-    local key_mtime
-    key_mtime="$(stat -c %Y "$key_file" 2>/dev/null || stat -f %m "$key_file" 2>/dev/null || echo "0")"
-    
-    # Check if cache exists and is fresh
-    if [[ -f "$cache_file" ]] && [[ -f "$cache_mtime_file" ]]; then
-        local cached_mtime
-        cached_mtime="$(cat "$cache_mtime_file" 2>/dev/null || echo "0")"
-        
-        # If mtime matches, use cached fingerprint
-        if [[ "$key_mtime" == "$cached_mtime" ]]; then
-            local cached_fingerprint
-            cached_fingerprint="$(cat "$cache_file" 2>/dev/null || echo "")"
-            if [[ -n "$cached_fingerprint" ]]; then
-                debug "Using cached fingerprint for: $key_basename"
-                echo "$cached_fingerprint"
-                return 0
-            fi
-        fi
-    fi
-    
-    # Generate fingerprint (extract MD5 or SHA256 format)
-    if ! command_exists ssh-keygen; then
-        return 1
-    fi
-    
-    local fingerprint
-    fingerprint=$(ssh-keygen -lf "$key_file" 2>/dev/null | awk '{print $2}' || echo "")
-    
-    if [[ -n "$fingerprint" ]]; then
-        # Save to cache
-        echo "$fingerprint" > "$cache_file"
-        echo "$key_mtime" > "$cache_mtime_file"
-        debug "Cached fingerprint for: $key_basename"
-    fi
-    
-    echo "$fingerprint"
-}
 debug "Log file: $LOG_FILE"
 debug "Dry-run: $DRY_RUN"
