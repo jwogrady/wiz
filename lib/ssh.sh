@@ -374,6 +374,46 @@ SSH_CONFIG_EOF
 }
 
 # ==============================================================================
+# SSH ARCHIVE EXTRACTION
+# ==============================================================================
+
+# extract_ssh_keys_from_archive: Extract SSH keys from tar.gz archive
+# Usage: extract_ssh_keys_from_archive <archive_path> <target_dir>
+extract_ssh_keys_from_archive() {
+    local archive="$1"
+    local target_dir="$2"
+
+    [[ -f "$archive" ]] || return 1
+
+    local temp_extract
+    temp_extract="$(mktemp -d)"
+    tar --no-absolute-names -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
+        rm -rf "$temp_extract"
+        return 1
+    }
+
+    local src_dir="$temp_extract"
+    [[ -d "$temp_extract/.ssh" ]] && src_dir="$temp_extract/.ssh"
+
+    local keyfile key_basename
+    for keyfile in "$src_dir"/*; do
+        [[ -e "$keyfile" ]] || break
+        [[ -f "$keyfile" ]] || continue
+        key_basename="$(basename "$keyfile")"
+        cp "$keyfile" "$target_dir/$key_basename" 2>/dev/null || true
+        if [[ "$key_basename" != *.pub ]]; then
+            chmod 600 "$target_dir/$key_basename" 2>/dev/null || true
+        else
+            chmod 644 "$target_dir/$key_basename" 2>/dev/null || true
+        fi
+    done
+
+    rm -rf "$temp_extract"
+    return 0
+}
+export -f extract_ssh_keys_from_archive
+
+# ==============================================================================
 # SSH FINGERPRINT CACHING
 # ==============================================================================
 

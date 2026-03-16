@@ -567,62 +567,6 @@ detect_windows_user() {
     return 1
 }
 
-# extract_ssh_keys_from_archive: Extract SSH keys from tar.gz archive
-# Usage: extract_ssh_keys_from_archive <archive_path> <target_dir>
-extract_ssh_keys_from_archive() {
-    local archive="$1"
-    local target_dir="$2"
-    
-    [[ -f "$archive" ]] || return 1
-    
-    # Extract archive to temp directory
-    local temp_extract
-    temp_extract="$(mktemp -d)"
-    tar --no-absolute-names -xzf "$archive" -C "$temp_extract" 2>/dev/null || {
-        rm -rf "$temp_extract"
-        return 1
-    }
-    
-    # Check if archive contains .ssh directory
-    if [[ -d "$temp_extract/.ssh" ]]; then
-        # Archive contains .ssh directory, copy all files from it
-        local keyfile key_basename
-        for keyfile in "$temp_extract/.ssh"/*; do
-            [[ -e "$keyfile" ]] || break
-            [[ -f "$keyfile" ]] || continue
-            key_basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$key_basename" 2>/dev/null || true
-
-            # Set correct permissions
-            if [[ "$key_basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$key_basename" 2>/dev/null || true
-            else
-                chmod 644 "$target_dir/$key_basename" 2>/dev/null || true
-            fi
-        done
-    else
-        # Archive contents are directly in root, copy all key files
-        local keyfile key_basename
-        for keyfile in "$temp_extract"/*; do
-            [[ -e "$keyfile" ]] || break
-            [[ -f "$keyfile" ]] || continue
-            key_basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$key_basename" 2>/dev/null || true
-
-            # Set correct permissions
-            if [[ "$key_basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$key_basename" 2>/dev/null || true
-            else
-                chmod 644 "$target_dir/$key_basename" 2>/dev/null || true
-            fi
-        done
-    fi
-    
-    # Clean up temp directory
-    rm -rf "$temp_extract"
-    return 0
-}
-
 # --- File Operations ---
 
 # atomic_write: Write content to file only if it differs (idempotent)
@@ -1450,7 +1394,7 @@ export -f command_exists detect_pkg_manager package_installed
 export -f pkg_update pkg_upgrade pkg_clean
 export -f install_package install_packages
 export -f detect_os detect_shell is_wsl is_macos is_linux sed_inplace
-export -f detect_windows_user extract_ssh_keys_from_archive
+export -f detect_windows_user
 export -f progress_bar spinner show_banner prepare_code_repo
 export -f curl_or_wget_download curl_or_wget_pipe get_command_version
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
