@@ -61,15 +61,18 @@ EOF
 # install_summary: Main installation logic
 install_summary() {
     log "Generating installation summary..."
-    
-    # Display summary
-    show_installation_summary
-    
+
+    # Display completion report (named distinctly from bin/install's
+    # show_installation_summary which shows the pre-run installation plan)
+    show_completion_report
+
     return 0
 }
 
-# show_installation_summary: Display comprehensive summary
-show_installation_summary() {
+# show_completion_report: Display what was installed and next steps
+# Note: deliberately named differently from show_installation_summary() in
+# bin/install, which shows the pre-run plan. This function shows post-run results.
+show_completion_report() {
     echo ""
     success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     success "  INSTALLATION SUMMARY"
