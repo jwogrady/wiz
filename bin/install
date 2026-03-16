@@ -305,7 +305,7 @@ list_modules() {
             fi
 
             # Show CLI override version if set for this module
-            local override_var="WIZ_$(echo "$module_name" | tr '[:lower:]' '[:upper:]')_VERSION"
+            local override_var="WIZ_${module_name^^}_VERSION"
             local override_val="${!override_var:-}"
             local version_display="${MODULE_VERSION:-unknown}"
             if [[ -n "$override_val" ]]; then
@@ -336,8 +336,11 @@ execute_module_wrapper() {
     local module_file="${MODULES_DIR}/install_${module}.sh"
 
     if [[ ! -f "$module_file" ]]; then
-        error "Module not found: $module" \
-            "Available modules: $(ls -1 "${MODULES_DIR}"/install_*.sh | sed 's|.*/install_||;s|\.sh$||' | tr '\n' ' ')"
+        local available
+        available="$(printf '%s\n' "${MODULES_DIR}"/install_*.sh \
+            | sed 's|.*/install_||;s|\.sh$||' \
+            | tr '\n' ' ')"
+        error "Module not found: $module" "Available modules: ${available}"
         return 1
     fi
 
@@ -388,11 +391,8 @@ show_installation_summary() {
     
     # Convert space-separated string to array
     local module_array
-    local old_ifs="$IFS"
-    IFS=' '
-    read -ra module_array <<< "$ordered_modules"
-    IFS="$old_ifs"
-    
+    IFS=' ' read -ra module_array <<< "$ordered_modules"
+
     # Categorize modules
     for module in "${module_array[@]}"; do
         if is_disabled "$module"; then
@@ -412,19 +412,17 @@ show_installation_summary() {
     echo ""
     
     if [[ ${#modules_to_install[@]} -gt 0 ]]; then
-        IFS=' '
-        local install_display="${modules_to_install[*]}"
-        IFS="$old_ifs"
+        local install_display
+        install_display="$(IFS=' '; echo "${modules_to_install[*]}")"
         printf "  📦 Will install:   %s\n" "$install_display"
         printf "  Total modules:    %d\n" "${#modules_to_install[@]}"
     else
         printf "  📦 Will install:   (none - all modules completed)\n"
     fi
-    
+
     if [[ ${#modules_to_skip[@]} -gt 0 ]]; then
-        IFS=' '
-        local skip_display="${modules_to_skip[*]}"
-        IFS="$old_ifs"
+        local skip_display
+        skip_display="$(IFS=' '; echo "${modules_to_skip[*]}")"
         printf "  ⊘ Will skip:       %s\n" "$skip_display"
         printf "  Skipped count:    %d\n" "${#modules_to_skip[@]}"
     fi
@@ -467,19 +465,14 @@ run_module_installation() {
         REQUESTED_MODULES=("${DEFAULT_MODULES[@]}")
     fi
     
-    # Display modules with proper formatting (IFS affects array joining)
+    # Display modules (join with spaces for readability)
     local modules_display
-    local old_ifs="$IFS"
-    IFS=' '
-    modules_display="${REQUESTED_MODULES[*]}"
-    IFS="$old_ifs"
-    
+    modules_display="$(IFS=' '; echo "${REQUESTED_MODULES[*]}")"
     log "Modules to install: ${modules_display}"
-    
+
     if [[ ${#DISABLED_MODULES[@]} -gt 0 ]]; then
-        IFS=' '
-        local disabled_display="${DISABLED_MODULES[*]}"
-        IFS="$old_ifs"
+        local disabled_display
+        disabled_display="$(IFS=' '; echo "${DISABLED_MODULES[*]}")"
         log "Modules to skip: ${disabled_display}"
     fi
     echo ""
@@ -508,12 +501,9 @@ run_module_installation() {
     log "Starting module installation..."
     echo ""
     
-    # Convert space-separated string to array (temporarily restore default IFS)
+    # Convert space-separated string to array
     local module_array
-    local old_ifs="$IFS"
-    IFS=' '
-    read -ra module_array <<< "$ordered_modules"
-    IFS="$old_ifs"
+    IFS=' ' read -ra module_array <<< "$ordered_modules"
     
     local total=${#module_array[@]}
     local current=0

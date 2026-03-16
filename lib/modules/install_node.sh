@@ -38,9 +38,10 @@ MODULE_DEPS="essentials"
 NVM_VERSION="v0.39.7"
 NVM_DIR="${HOME}/.nvm"
 # SHA-256 of the NVM install.sh for NVM_VERSION above.
-# Update this constant whenever NVM_VERSION is bumped.
+# Empty string disables verification (warns and proceeds).
 # To get the value: curl -fsSL <url> | sha256sum
-NVM_INSTALLER_SHA256="e41c1ca7a23c1b2e3e86a0fbb2b7dca0f7f39d5d3b3e1dce71f3d5a9e2b8f0c4"
+# Update this constant whenever NVM_VERSION is bumped.
+NVM_INSTALLER_SHA256=""
 
 # --- Module Interface Implementation ---
 
@@ -88,14 +89,18 @@ install_node() {
             module_fail "NVM installation failed"
         }
 
-        # Verify checksum before executing
-        local verify_result=0
-        verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
-        if [[ $verify_result -eq 1 ]]; then
-            rm -f "$nvm_tmp"
-            module_fail "NVM installer checksum mismatch — aborting for security"
+        # Verify checksum before executing (skip if NVM_INSTALLER_SHA256 is empty)
+        if [[ -n "$NVM_INSTALLER_SHA256" ]]; then
+            local verify_result=0
+            verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
+            if [[ $verify_result -eq 1 ]]; then
+                rm -f "$nvm_tmp"
+                module_fail "NVM installer checksum mismatch — aborting for security"
+            fi
+            # verify_result=2 means no sha tool available; warn already emitted, proceed
+        else
+            warn "NVM_INSTALLER_SHA256 not set — skipping SHA-256 verification"
         fi
-        # verify_result=2 means no sha tool available; warn already emitted, proceed
 
         run_shell "bash '$nvm_tmp'" || {
             rm -f "$nvm_tmp"

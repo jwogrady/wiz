@@ -608,14 +608,19 @@ append_to_file_once() {
     local file="$1"
     local marker="$2"
     local content="$3"
-    
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log "[DRY-RUN] Would append to $file (marker: $marker)"
+        return 0
+    fi
+
     [[ -f "$file" ]] || touch "$file"
-    
+
     if grep -Fq "$marker" "$file" 2>/dev/null; then
         debug "Content already present in $file (marker: $marker)"
         return 0
     fi
-    
+
     debug "Appending to $file"
     echo "$content" >> "$file"
 }
@@ -928,8 +933,12 @@ progress_bar() {
         fi
     fi
     
-    printf "\r${blue}[%-50s]${nc} %3d%% %s%s" \
-        "$(printf '#%.0s' $(seq 1 $filled))$(printf ' %.0s' $(seq 1 $empty))" \
+    # Build bar using printf width trick — avoids spawning seq subprocesses
+    local bar_filled bar_empty
+    bar_filled="$(printf '%*s' "$filled" '' | tr ' ' '#')"
+    bar_empty="$(printf '%*s' "$empty" '')"
+    printf "\r${blue}[%s%s]${nc} %3d%% %s%s" \
+        "$bar_filled" "$bar_empty" \
         "$percent" \
         "$desc" \
         "$time_info"
@@ -940,16 +949,23 @@ progress_bar() {
 }
 
 # spinner: Show a spinner while a command runs
-# Usage: spinner <command> [description]
+# Usage: spinner <pid_or_cmd> [description]
+# When passed a PID, waits for that process. When passed a command string,
+# executes it via bash -c (caller controls shell interpretation).
 spinner() {
     local cmd="$1"
     local desc="${2:-Processing...}"
     local pid
     local delay=0.1
     local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    
-    eval "$cmd" &
-    pid=$!
+
+    # If $cmd looks like a PID (all digits), wait for it; else run via bash -c
+    if [[ "$cmd" =~ ^[0-9]+$ ]]; then
+        pid="$cmd"
+    else
+        bash -c "$cmd" &
+        pid=$!
+    fi
     
     # Defensive color variable initialization
     local blue="${BLUE:-}"

@@ -152,70 +152,74 @@ resolve_dependencies() {
     return 0
 }
 
+# --- Topological Sort State (module-scope globals, reset per get_install_order call) ---
+_GIO_ORDERED=()
+_GIO_VISITED=()
+_GIO_VISITING=()
+
+# _gio_remove: Remove element from a named global array
+# Usage: _gio_remove _GIO_VISITING "module"
+# Requires Bash 4.3+ for local -n nameref
+_gio_remove() {
+    local -n _gio_ref=$1
+    local _gio_elem=$2
+    local _gio_new=()
+    local _gio_v
+    for _gio_v in "${_gio_ref[@]+"${_gio_ref[@]}"}"; do
+        [[ "$_gio_v" != "$_gio_elem" ]] && _gio_new+=("$_gio_v")
+    done
+    _gio_ref=("${_gio_new[@]+"${_gio_new[@]}"}")
+}
+
+# _gio_visit: DFS visit for topological sort; operates on _GIO_* globals
+_gio_visit() {
+    local module="$1"
+
+    # Already visited?
+    local v
+    for v in "${_GIO_VISITED[@]+"${_GIO_VISITED[@]}"}"; do
+        [[ "$v" == "$module" ]] && return 0
+    done
+
+    # Circular dependency check
+    for v in "${_GIO_VISITING[@]+"${_GIO_VISITING[@]}"}"; do
+        if [[ "$v" == "$module" ]]; then
+            error "Circular dependency detected: $module"
+            return 1
+        fi
+    done
+
+    _GIO_VISITING+=("$module")
+
+    local deps
+    deps="$(get_dependencies "$module")"
+    if [[ -n "$deps" ]] && [[ "$deps" != "ALL" ]]; then
+        local dep
+        for dep in $deps; do
+            _gio_visit "$dep" || return 1
+        done
+    fi
+
+    _gio_remove _GIO_VISITING "$module"
+    _GIO_VISITED+=("$module")
+    _GIO_ORDERED+=("$module")
+}
+
 # get_install_order: Calculate installation order based on dependencies
 # Usage: ordered_modules=$(get_install_order module1 module2 module3)
 get_install_order() {
-    local modules=("$@")
-    local ordered=()
-    local visited=()
-    local visiting=()
+    _GIO_ORDERED=()
+    _GIO_VISITED=()
+    _GIO_VISITING=()
 
-    # _array_remove: Properly remove element from array (helper function)
-    # Usage: _array_remove "array_name" "element"
-    _array_remove() {
-        local -n arr=$1
-        local elem=$2
-        local new_arr=()
-        local v
-        for v in "${arr[@]+"${arr[@]}"}"; do
-            [[ "$v" != "$elem" ]] && new_arr+=("$v")
-        done
-        arr=("${new_arr[@]+"${new_arr[@]}"}")
-    }
-
-    # Topological sort using depth-first search
-    _visit() {
-        local module="$1"
-
-        # Check if already visited
-        for v in "${visited[@]+"${visited[@]}"}"; do
-            [[ "$v" == "$module" ]] && return 0
-        done
-
-        # Check for circular dependency
-        for v in "${visiting[@]+"${visiting[@]}"}"; do
-            if [[ "$v" == "$module" ]]; then
-                error "Circular dependency detected: $module"
-                return 1
-            fi
-        done
-
-        # Mark as visiting
-        visiting+=("$module")
-
-        # Visit dependencies first
-        local deps
-        deps="$(get_dependencies "$module")"
-        if [[ -n "$deps" ]] && [[ "$deps" != "ALL" ]]; then
-            for dep in $deps; do
-                _visit "$dep" || return 1
-            done
-        fi
-
-        # Remove from visiting, add to visited (proper array removal)
-        _array_remove visiting "$module"
-        visited+=("$module")
-        ordered+=("$module")
-    }
-
-    # Visit each requested module
-    for module in "${modules[@]}"; do
-        _visit "$module" || return 1
+    local module
+    for module in "$@"; do
+        _gio_visit "$module" || return 1
     done
 
-    # Return ordered list
-    echo "${ordered[@]}"
+    echo "${_GIO_ORDERED[@]}"
 }
+
 
 # verify_dependencies: Verify all module dependencies can be met
 # Usage: if verify_dependencies; then ...
@@ -448,7 +452,7 @@ export -f module_start module_complete module_skip module_fail
 export -f mark_module_complete mark_module_failed is_module_complete get_module_state _parse_state_value
 export -f validate_module_interface execute_module
 export -f get_dependencies has_dependencies check_dependency
-export -f resolve_dependencies get_install_order verify_dependencies
+export -f resolve_dependencies get_install_order verify_dependencies _gio_remove _gio_visit
 export -f show_dependency_graph
 export -f register_module discover_modules
 

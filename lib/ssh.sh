@@ -32,7 +32,10 @@ has_ssh_keys() {
     local ssh_dir="${1:-${HOME}/.ssh}"
     [[ -d "$ssh_dir" ]] || return 1
 
+    local key
     for key in "$ssh_dir"/*; do
+        # Guard against empty directory (nullglob not guaranteed)
+        [[ -e "$key" ]] || return 1
         [[ -f "$key" ]] || continue
         [[ "$key" == *.pub ]] && continue
         [[ "$key" == *known_hosts* ]] && continue
@@ -61,11 +64,14 @@ load_ssh_keys_to_agent() {
 
     # Get list of already-loaded keys (fingerprints)
     local loaded_fingerprints
-    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}' || echo "")
+    loaded_fingerprints=$(ssh-add -l 2>/dev/null | awk '{print $2}') || loaded_fingerprints=""
 
     local keys_loaded=0
     local keys_skipped=0
+    local key
     for key in "$ssh_dir"/*; do
+        # Guard against empty directory (nullglob not guaranteed)
+        [[ -e "$key" ]] || break
         [[ -f "$key" ]] || continue
         [[ "$key" == *.pub ]] && continue
         [[ "$key" == *known_hosts* ]] && continue
@@ -189,7 +195,7 @@ import_keys_from_windows_home() {
 
     if [[ -f "$keys_archive" ]]; then
         import_keys_from_archive "$keys_archive" "$ssh_dir"
-        return $?
+        return
     fi
 
     # Fallback: Check Windows .ssh directory

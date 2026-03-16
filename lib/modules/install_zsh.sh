@@ -111,17 +111,17 @@ install_zsh() {
     log "Configuring .zshrc..."
     
     # Create or update .zshrc with common plugins
-    if ! grep -q "plugins=" "$ZSHRC" 2>/dev/null; then
+    if grep -q "^plugins=" "$ZSHRC" 2>/dev/null; then
+        log "Updating plugins configuration..."
+        sed_inplace 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC"
+    else
         log "Adding plugins configuration..."
-        sed_inplace 's/^plugins=(.*)/plugins=(git colored-man-pages extract)/' "$ZSHRC" 2>/dev/null || {
-            # If sed failed, append configuration
-            cat >> "$ZSHRC" << 'EOF'
+        cat >> "$ZSHRC" << 'EOF'
 
 # --- Wiz Zsh Configuration ---
 plugins=(git colored-man-pages extract)
 # --- End Wiz Zsh Configuration ---
 EOF
-        }
     fi
     
     # Set as default shell (if not already)
