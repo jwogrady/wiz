@@ -47,24 +47,45 @@ fi
 # ==============================================================================
 
 # --- Module Dependencies Map ---
-# This is populated dynamically by scanning modules or can be predefined
-declare -gA MODULE_DEPS=(
-    # Core dependencies
-    [essentials]=""
-    [zsh]=""
-    
-    # Shell enhancements depend on zsh
-    [starship]="zsh"
-    
-    # Development tools depend on essentials
-    [node]="essentials"
-    [bun]="essentials"
-    [neovim]="essentials"
-    [docker]="essentials"
-    
-    # Summary runs last
-    [summary]="ALL"
-)
+# Populated at startup by discover_modules() — do not edit manually.
+# Use register_module <name> <deps> to add entries.
+declare -gA MODULE_DEPS_MAP=()
+
+# register_module: Add a module to the dependency map
+# Usage: register_module <name> [deps]
+register_module() {
+    local name="$1"
+    local deps="${2:-}"
+    MODULE_DEPS_MAP["$name"]="$deps"
+    debug "Registered module: ${name} (deps: ${deps:-none})"
+}
+
+# discover_modules: Scan a directory for install_*.sh files and register each
+# Reads MODULE_NAME and MODULE_DEPS by parsing each file (no sourcing needed).
+# Prints discovered module names to stdout, one per line.
+# Usage: mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+discover_modules() {
+    local modules_dir="$1"
+    local module_file name deps
+
+    for module_file in "${modules_dir}"/install_*.sh; do
+        [[ -f "$module_file" ]] || continue
+
+        # Parse metadata with grep+sed — avoids sourcing and side effects
+        name="$(grep -m1 '^MODULE_NAME=' "$module_file" \
+            | sed 's/^MODULE_NAME=//; s/^"//; s/"$//')"
+        deps="$(grep -m1 '^MODULE_DEPS=' "$module_file" \
+            | sed 's/^MODULE_DEPS=//; s/^"//; s/"$//')"
+
+        if [[ -z "$name" ]]; then
+            warn "discover_modules: no MODULE_NAME in $(basename "$module_file"), skipping"
+            continue
+        fi
+
+        register_module "$name" "$deps"
+        echo "$name"
+    done
+}
 
 # --- Dependency Resolution Functions ---
 
@@ -72,7 +93,7 @@ declare -gA MODULE_DEPS=(
 # Usage: deps=$(get_dependencies <module>)
 get_dependencies() {
     local module="$1"
-    echo "${MODULE_DEPS[$module]:-}"
+    echo "${MODULE_DEPS_MAP[$module]:-}"
 }
 
 # has_dependencies: Check if module has dependencies
@@ -201,13 +222,13 @@ get_install_order() {
 verify_dependencies() {
     local failed=0
     
-    for module in "${!MODULE_DEPS[@]}"; do
-        local deps="${MODULE_DEPS[$module]}"
-        
+    for module in "${!MODULE_DEPS_MAP[@]}"; do
+        local deps="${MODULE_DEPS_MAP[$module]}"
+
         [[ -z "$deps" ]] || [[ "$deps" == "ALL" ]] && continue
-        
+
         for dep in $deps; do
-            if [[ ! -v MODULE_DEPS[$dep] ]]; then
+            if [[ ! -v MODULE_DEPS_MAP[$dep] ]]; then
                 error "Module $module depends on unknown module: $dep"
                 failed=1
             fi
@@ -222,9 +243,9 @@ show_dependency_graph() {
     echo "Module Dependency Graph:"
     echo "======================="
     
-    for module in "${!MODULE_DEPS[@]}"; do
-        local deps="${MODULE_DEPS[$module]}"
-        
+    for module in "${!MODULE_DEPS_MAP[@]}"; do
+        local deps="${MODULE_DEPS_MAP[$module]}"
+
         if [[ -z "$deps" ]]; then
             echo "  $module (no dependencies)"
         else
@@ -429,5 +450,6 @@ export -f validate_module_interface execute_module
 export -f get_dependencies has_dependencies check_dependency
 export -f resolve_dependencies get_install_order verify_dependencies
 export -f show_dependency_graph
+export -f register_module discover_modules
 
 debug "Module base library loaded (with dependency management)"

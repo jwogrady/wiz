@@ -74,6 +74,11 @@ WIZ_VERBOSE="${WIZ_VERBOSE:-0}"
 WIZ_FORCE_REINSTALL="${WIZ_FORCE_REINSTALL:-0}"
 WIZ_STOP_ON_ERROR="${WIZ_STOP_ON_ERROR:-1}"
 
+# Tool version overrides (empty = use each module's own default/latest)
+WIZ_NODE_VERSION="${WIZ_NODE_VERSION:-}"
+WIZ_BUN_VERSION="${WIZ_BUN_VERSION:-}"
+WIZ_STARSHIP_VERSION="${WIZ_STARSHIP_VERSION:-}"
+
 # Backward compatibility aliases (deprecated, use WIZ_ prefix instead)
 LOG_DIR="$WIZ_LOG_DIR"
 CACHE_DIR="$WIZ_CACHE_DIR"
@@ -87,6 +92,7 @@ VERBOSE="$WIZ_VERBOSE"
 export WIZ_VERSION WIZ_CODENAME
 export WIZ_ROOT WIZ_LOG_DIR WIZ_CACHE_DIR WIZ_STATE_DIR WIZ_SSH_FINGERPRINT_CACHE_DIR
 export WIZ_DRY_RUN WIZ_LOG_LEVEL WIZ_LOG_FILE WIZ_VERBOSE WIZ_FORCE_REINSTALL WIZ_STOP_ON_ERROR
+export WIZ_NODE_VERSION WIZ_BUN_VERSION WIZ_STARSHIP_VERSION
 # Backward compat exports
 export LOG_DIR LOG_FILE DRY_RUN LOG_LEVEL VERBOSE
 
@@ -103,12 +109,15 @@ wiz_config_get() {
         log_level)    echo "$WIZ_LOG_LEVEL" ;;
         log_file)     echo "$WIZ_LOG_FILE" ;;
         force)        echo "$WIZ_FORCE_REINSTALL" ;;
-        stop_on_error) echo "$WIZ_STOP_ON_ERROR" ;;
-        root)         echo "$WIZ_ROOT" ;;
-        log_dir)      echo "$WIZ_LOG_DIR" ;;
-        cache_dir)    echo "$WIZ_CACHE_DIR" ;;
-        state_dir)    echo "$WIZ_STATE_DIR" ;;
-        *)            echo "" ;;
+        stop_on_error)    echo "$WIZ_STOP_ON_ERROR" ;;
+        root)             echo "$WIZ_ROOT" ;;
+        log_dir)          echo "$WIZ_LOG_DIR" ;;
+        cache_dir)        echo "$WIZ_CACHE_DIR" ;;
+        state_dir)        echo "$WIZ_STATE_DIR" ;;
+        node_version)     echo "$WIZ_NODE_VERSION" ;;
+        bun_version)      echo "$WIZ_BUN_VERSION" ;;
+        starship_version) echo "$WIZ_STARSHIP_VERSION" ;;
+        *)                echo "" ;;
     esac
 }
 
@@ -140,6 +149,18 @@ wiz_config_set() {
         stop_on_error)
             WIZ_STOP_ON_ERROR="$value"
             export WIZ_STOP_ON_ERROR
+            ;;
+        node_version)
+            WIZ_NODE_VERSION="$value"
+            export WIZ_NODE_VERSION
+            ;;
+        bun_version)
+            WIZ_BUN_VERSION="$value"
+            export WIZ_BUN_VERSION
+            ;;
+        starship_version)
+            WIZ_STARSHIP_VERSION="$value"
+            export WIZ_STARSHIP_VERSION
             ;;
         *)
             warn "Unknown config key: $key"
@@ -986,6 +1007,56 @@ prepare_code_repo() {
 }
 
 # --- Download and Installation Helpers ---
+
+# verify_sha256: Compare a file's SHA-256 digest against an expected value
+# Usage: verify_sha256 <file> <expected_hex_digest>
+# Returns 0 on match, 1 on mismatch, 2 if sha256sum/shasum unavailable (warns, not fatal)
+verify_sha256() {
+    local file="$1"
+    local expected="$2"
+
+    local sha_cmd=""
+    if command_exists sha256sum; then
+        sha_cmd="sha256sum"
+    elif command_exists shasum; then
+        sha_cmd="shasum -a 256"
+    else
+        warn "sha256sum/shasum not available — skipping checksum verification for $(basename "$file")"
+        return 2
+    fi
+
+    local actual
+    actual="$($sha_cmd "$file" | awk '{print $1}')"
+
+    if [[ "$actual" != "$expected" ]]; then
+        error "SHA-256 mismatch for $(basename "$file")"
+        error "  expected: $expected"
+        error "  actual:   $actual"
+        return 1
+    fi
+
+    debug "SHA-256 verified: $(basename "$file")"
+    return 0
+}
+
+# download_to_temp: Download a URL to a mktemp file; print the temp path to stdout
+# Usage: tmp=$(download_to_temp <url> <error_message>)
+# Caller is responsible for deleting the file when done.
+download_to_temp() {
+    local url="$1"
+    local error_msg="${2:-Failed to download installer}"
+
+    local tmp_file
+    tmp_file="$(mktemp)"
+    chmod 600 "$tmp_file"
+
+    curl_or_wget_download "$url" "$tmp_file" "$error_msg" || {
+        rm -f "$tmp_file"
+        return 1
+    }
+
+    echo "$tmp_file"
+}
 
 # curl_or_wget_download: Download using curl or wget with fallback
 # Usage: curl_or_wget_download <url> [output_file] [error_message]
