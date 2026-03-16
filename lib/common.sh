@@ -532,15 +532,15 @@ detect_windows_user() {
     
     # Fallback: scan /mnt/c/Users/ for first non-system directory
     if [[ -d /mnt/c/Users ]]; then
+        local user_dir dir_basename
         for user_dir in /mnt/c/Users/*; do
             [[ -d "$user_dir" ]] || continue
-            local basename
-            basename="$(basename "$user_dir")"
+            dir_basename="$(basename "$user_dir")"
             # Skip system directories
-            [[ "$basename" == "Public" ]] && continue
-            [[ "$basename" == "Default" ]] && continue
-            [[ "$basename" == "Default User" ]] && continue
-            echo "$basename"
+            [[ "$dir_basename" == "Public" ]]       && continue
+            [[ "$dir_basename" == "Default" ]]      && continue
+            [[ "$dir_basename" == "Default User" ]] && continue
+            echo "$dir_basename"
             return 0
         done
     fi
@@ -567,32 +567,34 @@ extract_ssh_keys_from_archive() {
     # Check if archive contains .ssh directory
     if [[ -d "$temp_extract/.ssh" ]]; then
         # Archive contains .ssh directory, copy all files from it
+        local keyfile key_basename
         for keyfile in "$temp_extract/.ssh"/*; do
+            [[ -e "$keyfile" ]] || break
             [[ -f "$keyfile" ]] || continue
-            local basename
-            basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
-            
+            key_basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$key_basename" 2>/dev/null || true
+
             # Set correct permissions
-            if [[ "$basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            if [[ "$key_basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$key_basename" 2>/dev/null || true
             else
-                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+                chmod 644 "$target_dir/$key_basename" 2>/dev/null || true
             fi
         done
     else
         # Archive contents are directly in root, copy all key files
+        local keyfile key_basename
         for keyfile in "$temp_extract"/*; do
+            [[ -e "$keyfile" ]] || break
             [[ -f "$keyfile" ]] || continue
-            local basename
-            basename="$(basename "$keyfile")"
-            cp "$keyfile" "$target_dir/$basename" 2>/dev/null || true
-            
+            key_basename="$(basename "$keyfile")"
+            cp "$keyfile" "$target_dir/$key_basename" 2>/dev/null || true
+
             # Set correct permissions
-            if [[ "$basename" != *.pub ]]; then
-                chmod 600 "$target_dir/$basename" 2>/dev/null || true
+            if [[ "$key_basename" != *.pub ]]; then
+                chmod 600 "$target_dir/$key_basename" 2>/dev/null || true
             else
-                chmod 644 "$target_dir/$basename" 2>/dev/null || true
+                chmod 644 "$target_dir/$key_basename" 2>/dev/null || true
             fi
         done
     fi
