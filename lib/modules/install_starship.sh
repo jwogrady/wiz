@@ -45,11 +45,8 @@ STARSHIP_PRESET="${WIZ_ROOT}/config/starship_linux.toml"
 
 # describe_starship: Describe what this module will install
 describe_starship() {
+    _module_banner "✨ STARSHIP PROMPT"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ STARSHIP PROMPT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Starship with the Cosmic Oasis preset:
 
@@ -69,7 +66,6 @@ Features:
 
 Cosmic Oasis - Polished Crescent Edition with perfectly matched gradient joins.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

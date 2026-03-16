@@ -40,11 +40,8 @@ OHMYZSH_DIR="$HOME/.oh-my-zsh"
 
 # describe_zsh: Describe what this module will install
 describe_zsh() {
+    _module_banner "🐚 ZSH CONFIGURATION"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🐚 ZSH CONFIGURATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module configures Zsh as your default shell:
 
@@ -60,7 +57,6 @@ Features:
   - Git integration
   - Syntax highlighting ready
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

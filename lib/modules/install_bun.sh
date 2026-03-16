@@ -37,11 +37,8 @@ MODULE_DEPS="essentials"
 
 # describe_bun: Describe what this module will install
 describe_bun() {
+    _module_banner "🍞 BUN JAVASCRIPT RUNTIME"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🍞 BUN JAVASCRIPT RUNTIME
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Bun, a fast JavaScript runtime:
 
@@ -57,7 +54,6 @@ Features:
   - Native bundler and test runner
   - Built-in TypeScript support
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

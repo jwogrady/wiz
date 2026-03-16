@@ -41,11 +41,8 @@ MODULE_DEPS="ALL"
 
 # describe_summary: Describe what this module will do
 describe_summary() {
+    _module_banner "📋 INSTALLATION SUMMARY"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 INSTALLATION SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module displays a summary of your installation:
 
@@ -54,7 +51,6 @@ This module displays a summary of your installation:
   🔧 Installed tools
   📚 Next steps
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

@@ -447,13 +447,22 @@ execute_module() {
     fi
 }
 
+# _module_banner: Print a section separator with a title
+# Usage: _module_banner "TITLE STRING"
+# All describe_* functions use this to avoid duplicating the separator literal.
+_module_banner() {
+    local title="$1"
+    local sep="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf '\n%s\n%s\n%s\n' "$sep" "$title" "$sep"
+}
+
 # --- Export Functions ---
 export -f module_start module_complete module_skip module_fail
 export -f mark_module_complete mark_module_failed is_module_complete get_module_state _parse_state_value
 export -f validate_module_interface execute_module
 export -f get_dependencies has_dependencies check_dependency
 export -f resolve_dependencies get_install_order verify_dependencies _gio_remove _gio_visit
-export -f show_dependency_graph
+export -f show_dependency_graph _module_banner
 export -f register_module discover_modules
 
 debug "Module base library loaded (with dependency management)"

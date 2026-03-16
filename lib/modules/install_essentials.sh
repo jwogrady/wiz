@@ -109,11 +109,8 @@ is_enabled() {
 
 # describe_essentials: Describe what this module will install
 describe_essentials() {
+    _module_banner "📦 ESSENTIAL SYSTEM PACKAGES"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 ESSENTIAL SYSTEM PACKAGES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs foundational system packages:
 
@@ -128,7 +125,6 @@ This module installs foundational system packages:
 
 Total packages: ~50+
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

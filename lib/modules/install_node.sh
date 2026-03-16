@@ -48,11 +48,8 @@ NVM_INSTALLER_SHA256=""
 # describe_node: Describe what this module will install
 describe_node() {
     local node_target="${WIZ_NODE_VERSION:-lts}"
+    _module_banner "📦 NODE.JS VIA NVM"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 NODE.JS VIA NVM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Node.js development environment:
 
@@ -71,7 +68,6 @@ Configuration:
   - Sets moderate audit level
   - Minimal npm output
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 

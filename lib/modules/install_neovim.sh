@@ -38,11 +38,8 @@ NEOVIM_CONFIG_DIR="$HOME/.config/nvim"
 
 # describe_neovim: Describe what this module will install
 describe_neovim() {
+    _module_banner "📝 NEOVIM EDITOR"
     cat << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 NEOVIM EDITOR
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This module installs Neovim, a modern Vim fork:
 
@@ -57,7 +54,6 @@ Features:
   - Better performance
   - Terminal integration
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 }
 
