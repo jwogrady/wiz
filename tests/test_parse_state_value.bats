@@ -33,12 +33,12 @@ _write_state() {
 
 @test "_parse_state_value: returns empty string for missing key" {
     _write_state "STATUS=complete"
-    result=$(_parse_state_value "${TEST_TMPDIR}/state_file" "MISSING")
+    result=$(_parse_state_value "${TEST_TMPDIR}/state_file" "MISSING") || true
     [[ -z "$result" ]]
 }
 
 @test "_parse_state_value: returns failure (exit 1) for missing file" {
-    run _parse_state_value "${TEST_TMPDIR}/nonexistent" "STATUS"
+    bats_run _parse_state_value "${TEST_TMPDIR}/nonexistent" "STATUS"
     [[ "$status" -ne 0 ]]
 }
 

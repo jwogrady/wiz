@@ -50,7 +50,7 @@ _order() {
             b) pos_b=$i ;;
             c) pos_c=$i ;;
         esac
-        ((i++))
+        ((i++)) || true
     done
     [[ $pos_c -lt $pos_b ]]
     [[ $pos_b -lt $pos_a ]]
@@ -65,7 +65,7 @@ _order() {
     # Count occurrences of 'd'
     local count=0
     for m in "${ORDER_RESULT[@]}"; do
-        [[ "$m" == "d" ]] && ((count++))
+        [[ "$m" == "d" ]] && ((count++)) || true
     done
     [[ $count -eq 1 ]]
     # d must come before b and c
@@ -76,7 +76,7 @@ _order() {
             b) pos_b=$i ;;
             c) pos_c=$i ;;
         esac
-        ((i++))
+        ((i++)) || true
     done
     [[ $pos_d -lt $pos_b ]]
     [[ $pos_d -lt $pos_c ]]
@@ -87,7 +87,7 @@ _order() {
     _order "x" "x"
     local count=0
     for m in "${ORDER_RESULT[@]}"; do
-        [[ "$m" == "x" ]] && ((count++))
+        [[ "$m" == "x" ]] && ((count++)) || true
     done
     [[ $count -eq 1 ]]
 }
@@ -102,13 +102,13 @@ _order() {
 @test "get_install_order: circular dependency returns non-zero exit" {
     _reg "p" "q"
     _reg "q" "p"
-    run get_install_order "p"
+    bats_run get_install_order "p"
     [[ "$status" -ne 0 ]]
 }
 
 @test "get_install_order: MODULE_DEPS 'ALL' treated as no ordering constraint" {
     _reg "summary" "ALL"
     # Should not error — ALL is a sentinel, not a real dep name
-    run get_install_order "summary"
+    bats_run get_install_order "summary"
     [[ "$status" -eq 0 ]]
 }

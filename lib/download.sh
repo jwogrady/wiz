@@ -167,7 +167,39 @@ get_command_version() {
     return 1
 }
 
+# wiz_download_verified: Download a URL to a temp file, optionally verify SHA-256.
+# Usage: tmp=$(wiz_download_verified <url> <expected_sha256|""> [error_msg])
+# Returns 0 and prints temp path on success.
+# Returns 1 on download failure or checksum mismatch (temp file already removed).
+# If expected_sha256 is empty, warns and proceeds without verification.
+# If verify_sha256 returns rc=2 (sha tool unavailable), warns and proceeds.
+# No dry-run guard: dry-run is handled by run() inside curl_or_wget_download.
+# Caller is responsible for deleting the returned temp file.
+wiz_download_verified() {
+    local url="$1"
+    local expected_sha="${2:-}"
+    local error_msg="${3:-Failed to download installer}"
+
+    local tmp
+    tmp="$(download_to_temp "$url" "$error_msg")" || return 1
+
+    if [[ -n "$expected_sha" ]]; then
+        local rc=0
+        verify_sha256 "$tmp" "$expected_sha" || rc=$?
+        if [[ $rc -eq 1 ]]; then
+            rm -f "$tmp"
+            error "Installer checksum mismatch — aborting for security"
+            return 1
+        fi
+        # rc=2: sha tool unavailable; verify_sha256 already warned; proceed
+    else
+        warn "No checksum provided — skipping SHA-256 verification"
+    fi
+
+    echo "$tmp"
+}
+
 # --- Export Functions ---
-export -f verify_sha256 download_to_temp curl_or_wget_download get_command_version
+export -f verify_sha256 download_to_temp curl_or_wget_download get_command_version wiz_download_verified
 
 debug "Download helpers library loaded"

@@ -69,26 +69,18 @@ install_zsh() {
     if [[ ! -d "$OHMYZSH_DIR" ]]; then
         log "Installing Oh My Zsh..."
         
-        # Download and run installer with --unattended flag
-        # NOTE: Uses run_shell due to command substitution and pipes
-        if command_exists curl; then
-            run_shell 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
-                warn "curl installation failed, trying wget..."
-                if command_exists wget; then
-                    run_shell 'sh -c "$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
-                        module_fail "Failed to install Oh My Zsh"
-                    }
-                else
-                    module_fail "Neither curl nor wget available"
-                fi
-            }
-        elif command_exists wget; then
-            run_shell 'sh -c "$(wget -qO- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' || {
-                module_fail "Failed to install Oh My Zsh"
-            }
-        else
-            module_fail "Neither curl nor wget available"
-        fi
+        # Download installer to temp file then execute — avoids partial execution
+        # on interrupted downloads. download_to_temp handles curl/wget fallback.
+        local omz_url="https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+        local omz_tmp
+        omz_tmp="$(download_to_temp "$omz_url" "Failed to download Oh My Zsh installer")" || {
+            module_fail "Oh My Zsh download failed"
+        }
+        run_shell "sh '$omz_tmp' --unattended" || {
+            rm -f "$omz_tmp"
+            module_fail "Failed to install Oh My Zsh"
+        }
+        rm -f "$omz_tmp"
         
         success "Oh My Zsh installed"
     else

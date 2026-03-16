@@ -23,6 +23,12 @@ _common_setup() {
     TEST_TMPDIR="$(mktemp -d)"
     export TEST_TMPDIR
 
+    # Capture BATS's `run` before any wiz library is sourced.
+    # lib/common.sh exports its own `run` (a command wrapper with logging) which
+    # clobbers BATS's `run` (the test helper that captures output/status).
+    # Tests that source wiz libs must call `bats_run` instead of `run`.
+    eval "bats_run() { $(declare -f run | tail -n +2) }"
+
     # --- Stub required WIZ_ variables so sourcing libs doesn't fail ---
     export WIZ_ROOT
     export WIZ_LOG_DIR="${TEST_TMPDIR}/logs"
@@ -47,6 +53,18 @@ _common_setup() {
 
     mkdir -p "$WIZ_LOG_DIR" "$WIZ_CACHE_DIR" "$WIZ_STATE_DIR" \
              "$WIZ_SSH_FINGERPRINT_CACHE_DIR"
+}
+
+_setup_isolated_home() {
+    # Redirects HOME to a temp directory so tests don't touch the real ~/.bashrc / ~/.zshrc.
+    # Call after _common_setup (requires TEST_TMPDIR to exist).
+    # Optional arg: pass 0 to skip creating empty rc files (test creates them itself).
+    export HOME="${TEST_TMPDIR}/home"
+    mkdir -p "$HOME"
+    local create_rc="${1:-1}"
+    if [[ "$create_rc" -eq 1 ]]; then
+        touch "${HOME}/.bashrc" "${HOME}/.zshrc"
+    fi
 }
 
 _common_teardown() {

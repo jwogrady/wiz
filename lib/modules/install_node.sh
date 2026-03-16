@@ -39,6 +39,14 @@ NVM_DIR="${HOME}/.nvm"
 # Update this constant whenever NVM_VERSION is bumped.
 NVM_INSTALLER_SHA256=""
 
+# Shell init block — identical content for both bash and zsh
+_NVM_SHELL_BLOCK='
+# >>> NVM init >>>
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+# <<< NVM init <<<'
+
 # --- Module Interface Implementation ---
 
 # describe_node: Describe what this module will install
@@ -70,41 +78,39 @@ EOF
 # install_node: Main installation logic
 install_node() {
     log "Installing NVM and Node.js LTS..."
-    
+
     # Install NVM if not present
     if [[ ! -d "$NVM_DIR" ]]; then
         log "Installing NVM ${NVM_VERSION}..."
 
-        local nvm_url="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
-        local nvm_tmp
-        nvm_tmp="$(download_to_temp "$nvm_url" "Failed to download NVM installer")" || {
-            module_fail "NVM installation failed"
-        }
-
-        # Verify checksum before executing.
-        # NVM_INSTALLER_SHA256 must be set — fail closed if empty.
+        # Fail-closed: NVM_INSTALLER_SHA256 must be set before downloading.
+        # Check here so we avoid downloading a file we would immediately discard.
         if [[ -z "$NVM_INSTALLER_SHA256" ]]; then
-            rm -f "$nvm_tmp"
             module_fail "NVM_INSTALLER_SHA256 is not set. To obtain the value, run: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum"
         fi
-        local verify_result=0
-        verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
-        if [[ $verify_result -eq 1 ]]; then
-            rm -f "$nvm_tmp"
-            module_fail "NVM installer checksum mismatch — aborting for security"
-        fi
-        # verify_result=2 means no sha tool available; warn already emitted, proceed
 
-        run_shell "bash '$nvm_tmp'" || {
+        local nvm_tmp
+        nvm_tmp="$(wiz_download_verified \
+            "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" \
+            "$NVM_INSTALLER_SHA256" \
+            "Failed to download NVM installer")" || module_fail "NVM installation failed"
+
+        if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+            log "[DRY-RUN] Would execute NVM installer: ${nvm_tmp}"
             rm -f "$nvm_tmp"
-            module_fail "NVM installation failed"
-        }
-        rm -f "$nvm_tmp"
+        else
+            run_shell "bash '$nvm_tmp'" || {
+                rm -f "$nvm_tmp"
+                module_fail "NVM installation failed"
+            }
+            rm -f "$nvm_tmp"
+        fi
+
         success "NVM installed successfully"
     else
         log "NVM already installed at ${NVM_DIR}"
     fi
-    
+
     # Load NVM into current shell
     export NVM_DIR
     # Temporarily disable nounset for NVM loading
@@ -114,17 +120,16 @@ install_node() {
     # shellcheck source=/dev/null
     [[ -s "$NVM_DIR/bash_completion" ]] && source "$NVM_DIR/bash_completion"
     set -u
-    
+
     # Verify NVM loaded
     if ! command_exists nvm; then
         module_fail "NVM failed to load after installation"
     fi
-    
-    # Add NVM to shell RC files
+
+    # Add NVM init to ~/.bashrc and ~/.zshrc (idempotent)
     log "Configuring shell integration..."
-    add_nvm_to_shell_rc "${HOME}/.bashrc"
-    add_nvm_to_shell_rc "${HOME}/.zshrc"
-    
+    wiz_add_shell_block ">>> NVM init >>>" "$_NVM_SHELL_BLOCK"
+
     # Resolve target version: CLI override or fall back to LTS
     local node_target="${WIZ_NODE_VERSION:-lts}"
     local nvm_install_arg
@@ -180,79 +185,56 @@ install_node() {
         log "Enabling Corepack..."
         run corepack enable || warn "Failed to enable Corepack"
     fi
-    
+
     # Display versions
     local node_version
     local npm_version
     node_version="$(node -v 2>/dev/null || echo 'unknown')"
     npm_version="$(npm -v 2>/dev/null || echo 'unknown')"
-    
+
     success "Node.js ${node_version} installed"
     success "npm ${npm_version} configured"
-    
+
     return 0
-}
-
-# add_nvm_to_shell_rc: Add NVM initialization to shell RC file
-add_nvm_to_shell_rc() {
-    local rc_file="$1"
-
-    # Skip if file doesn't exist and we're not in dry-run
-    [[ ! -e "$rc_file" ]] && [[ ${WIZ_DRY_RUN:-0} -eq 0 ]] && return 0
-
-    local nvm_init='
-# >>> NVM init >>>
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-# <<< NVM init <<<'
-
-    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
-        log "[DRY-RUN] Would append NVM init block to ${rc_file}"
-        return 0
-    fi
-
-    append_to_file_once "$rc_file" ">>> NVM init >>>" "$nvm_init"
-    debug "NVM init present in ${rc_file}"
 }
 
 # verify_node: Verify installation succeeded
 verify_node() {
     local failed=0
-    
+
     log "Verifying Node.js installation..."
-    
+
     # Check NVM directory exists
     if [[ ! -d "$NVM_DIR" ]]; then
         error "NVM directory not found: ${NVM_DIR}"
-        ((failed++))
+        ((failed++)) || true
     fi
-    
+
     # Load NVM for verification
     export NVM_DIR
     set +u
     # shellcheck source=/dev/null
     [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
     set -u
-    
+
     # Verify NVM command (nvm is a shell function, so check differently)
     if ! command_exists nvm && ! declare -f nvm >/dev/null 2>&1; then
         error "nvm command not available"
-        ((failed++))
+        ((failed++)) || true
     else
         success "✓ nvm command available"
     fi
-    
+
     # Verify Node.js
     if ! verify_command_exists node; then
-        ((failed++))
+        ((failed++)) || true
     fi
-    
+
     # Verify npm
     if ! verify_command_exists npm; then
-        ((failed++))
+        ((failed++)) || true
     fi
-    
+
     # Check shell RC files have NVM init
     for rc_file in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
         if [[ -f "$rc_file" ]]; then
@@ -263,12 +245,12 @@ verify_node() {
             fi
         fi
     done
-    
+
     if [[ $failed -gt 0 ]]; then
         error "Verification failed with ${failed} error(s)"
         return 1
     fi
-    
+
     success "Node.js installation verified successfully"
     return 0
 }

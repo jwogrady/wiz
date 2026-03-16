@@ -22,34 +22,34 @@ teardown() { _common_teardown; }
 # --- tests ---
 
 @test "has_ssh_keys: returns false when directory does not exist" {
-    run has_ssh_keys "${SSH_DIR}/nonexistent"
+    bats_run has_ssh_keys "${SSH_DIR}/nonexistent"
     [[ "$status" -ne 0 ]]
 }
 
 @test "has_ssh_keys: returns false when directory is empty" {
     mkdir -p "$SSH_DIR"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -ne 0 ]]
 }
 
 @test "has_ssh_keys: returns false when only .pub file exists" {
     mkdir -p "$SSH_DIR"
     touch "${SSH_DIR}/id_ed25519.pub"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -ne 0 ]]
 }
 
 @test "has_ssh_keys: returns false when only known_hosts exists" {
     mkdir -p "$SSH_DIR"
     touch "${SSH_DIR}/known_hosts"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -ne 0 ]]
 }
 
 @test "has_ssh_keys: returns false when only config file exists" {
     mkdir -p "$SSH_DIR"
     touch "${SSH_DIR}/config"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -ne 0 ]]
 }
 
@@ -57,7 +57,7 @@ teardown() { _common_teardown; }
     mkdir -p "$SSH_DIR"
     touch "${SSH_DIR}/id_ed25519"
     chmod 600 "${SSH_DIR}/id_ed25519"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -eq 0 ]]
 }
 
@@ -66,13 +66,13 @@ teardown() { _common_teardown; }
     touch "${SSH_DIR}/id_ed25519"
     touch "${SSH_DIR}/id_ed25519.pub"
     chmod 600 "${SSH_DIR}/id_ed25519"
-    run has_ssh_keys "$SSH_DIR"
+    bats_run has_ssh_keys "$SSH_DIR"
     [[ "$status" -eq 0 ]]
 }
 
 @test "has_ssh_keys: defaults to HOME/.ssh when no argument given" {
     # This test only validates the function runs without error using the default
     # path (result depends on actual HOME/.ssh — just check no crash)
-    run has_ssh_keys
+    bats_run has_ssh_keys
     [[ "$status" -eq 0 || "$status" -ne 0 ]]  # either outcome is valid
 }

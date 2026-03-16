@@ -503,6 +503,53 @@ verify_file_or_dir() {
     fi
 }
 
+# wiz_add_shell_block: Idempotently append a block to ~/.bashrc and ~/.zshrc.
+# Skips rc files that do not exist. Dry-run delegated to append_to_file_once.
+# Usage: wiz_add_shell_block <sentinel> <block>
+# sentinel: unique string present inside block (e.g. ">>> NVM init >>>")
+# block:    full text to append (must contain the sentinel string)
+wiz_add_shell_block() {
+    local sentinel="$1"
+    local block="$2"
+
+    local rc_file
+    for rc_file in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+        [[ -f "$rc_file" ]] || continue
+        append_to_file_once "$rc_file" "$sentinel" "$block"
+    done
+}
+
+# wiz_update_shell_block: Remove an existing wiz-managed block then append updated version.
+# Operates on a single rc file. Call once per shell (bash/zsh) with the appropriate block.
+# Usage: wiz_update_shell_block <start_sentinel> <end_sentinel> <block> <rc_file>
+# Constraints: start_sentinel and end_sentinel must not contain '/' (sed delimiter).
+# Safety: if start_sentinel is present but end_sentinel is absent, warns and skips
+#         deletion to avoid deleting content from the sentinel to EOF.
+wiz_update_shell_block() {
+    local start_sentinel="$1"
+    local end_sentinel="$2"
+    local block="$3"
+    local rc_file="$4"
+
+    [[ -f "$rc_file" ]] || return 0
+
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+        log "[DRY-RUN] Would update shell block '${start_sentinel}' in ${rc_file}"
+        return 0
+    fi
+
+    if grep -qF "$start_sentinel" "$rc_file" 2>/dev/null; then
+        if ! grep -qF "$end_sentinel" "$rc_file" 2>/dev/null; then
+            warn "Block '${start_sentinel}' has no closing sentinel in ${rc_file} — skipping removal to avoid data loss"
+        else
+            sed_inplace "/${start_sentinel}/,/${end_sentinel}/d" "$rc_file"
+        fi
+    fi
+
+    printf '%s\n' "$block" >> "$rc_file"
+    debug "Shell block '${start_sentinel}' updated in ${rc_file}"
+}
+
 # ==============================================================================
 # MODULE ORCHESTRATION
 # ==============================================================================
@@ -803,6 +850,7 @@ export -f get_dependencies get_install_order verify_dependencies _gio_remove _gi
 export -f show_dependency_graph _module_banner
 export -f register_module discover_modules
 export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
+export -f wiz_add_shell_block wiz_update_shell_block
 export -f list_modules is_disabled show_installation_summary show_statistics
 export -f execute_module_wrapper run_module_installation
 

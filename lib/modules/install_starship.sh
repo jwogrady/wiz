@@ -37,6 +37,24 @@ BASHRC="$HOME/.bashrc"
 # Use the existing WIZ_ROOT instead of redefining it
 STARSHIP_PRESET="${WIZ_ROOT}/config/starship_linux.toml"
 
+# Shell init blocks — bash and zsh require different init commands
+_STARSHIP_BASH_BLOCK='
+# --- Wiz Starship Prompt ---
+# Initialize Starship prompt (loads after PATH and other tools)
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+fi
+# --- End Wiz Starship Prompt ---'
+
+_STARSHIP_ZSH_BLOCK='
+# --- Wiz Starship Prompt ---
+# Initialize Starship prompt (loads after PATH and other tools)
+# Ensure PATH is set before Starship initialization
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init zsh)"
+fi
+# --- End Wiz Starship Prompt ---'
+
 # --- Module Interface Implementation ---
 
 # describe_starship: Describe what this module will install
@@ -90,25 +108,28 @@ install_starship() {
 
         # Download installer to temp file, then execute — avoids partial execution
         # on interrupted downloads. Starship does not publish a checksum for
-        # install.sh, so we skip SHA verification and warn the user.
+        # install.sh, so we pass empty SHA (wiz_download_verified warns and proceeds).
         local starship_tmp
-        starship_tmp="$(download_to_temp \
-            "https://starship.rs/install.sh" \
+        starship_tmp="$(wiz_download_verified \
+            "https://starship.rs/install.sh" "" \
             "Failed to download Starship installer")" || {
             warn "Official installer download failed, trying alternative methods..."
             install_starship_fallback
             return 0
         }
 
-        warn "No published checksum for Starship installer — skipping SHA-256 verification"
-
-        run_shell "sh '${starship_tmp}' -- --yes${version_flag}" || {
+        if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
+            log "[DRY-RUN] Would execute Starship installer: ${starship_tmp}"
             rm -f "$starship_tmp"
-            warn "Official installer failed, trying alternative methods..."
-            install_starship_fallback
-            return 0
-        }
-        rm -f "$starship_tmp"
+        else
+            run_shell "sh '${starship_tmp}' -- --yes${version_flag}" || {
+                rm -f "$starship_tmp"
+                warn "Official installer failed, trying alternative methods..."
+                install_starship_fallback
+                return 0
+            }
+            rm -f "$starship_tmp"
+        fi
         
         # Verify installation
         if ! command_exists starship; then
@@ -157,21 +178,8 @@ install_starship_fallback() {
     local temp_file="/tmp/starship.tar.gz"
     
     log "Downloading starship binary for ${starship_arch}..."
-    
-    if command_exists curl; then
-        run curl -fsSL -o "$temp_file" "$download_url" || {
-            error "Failed to download starship binary"
-            return 1
-        }
-    elif command_exists wget; then
-        run wget -q -O "$temp_file" "$download_url" || {
-            error "Failed to download starship binary"
-            return 1
-        }
-    else
-        error "Neither curl nor wget available"
-        return 1
-    fi
+    curl_or_wget_download "$download_url" "$temp_file" \
+        "Failed to download starship binary" || return 1
 
     log "Extracting starship binary..."
     run tar --no-absolute-names -xzf "$temp_file" -C "$install_dir"
@@ -351,53 +359,22 @@ EOF
 
 # configure_shell_integration: Add Starship to shell configs
 # Ensures Starship loads after PATH is set and other tools are initialized
+# Uses wiz_update_shell_block to replace any existing managed block.
+# Bash and Zsh require different init commands so each file gets its own block.
 configure_shell_integration() {
     log "Configuring shell integration..."
-    
-    local starship_init='
-# --- Wiz Starship Prompt ---
-# Initialize Starship prompt (loads after PATH and other tools)
-if command -v starship >/dev/null 2>&1; then
-    eval "$(starship init bash)"
-fi
-# --- End Wiz Starship Prompt ---
-'
-    
-    local starship_zsh_init='
-# --- Wiz Starship Prompt ---
-# Initialize Starship prompt (loads after PATH and other tools)
-# Ensure PATH is set before Starship initialization
-if command -v starship >/dev/null 2>&1; then
-    eval "$(starship init zsh)"
-fi
-# --- End Wiz Starship Prompt ---
-'
-    
-    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
-        log "[DRY-RUN] Would configure Starship init in shell profiles"
-        success "Shell integration configured"
-        return 0
-    fi
 
-    # Add to Bash - ensure it's at the end for proper initialization order
-    if [[ -f "$BASHRC" ]]; then
-        # Remove any existing Starship config first (update pattern)
-        if grep -q "Wiz Starship Prompt" "$BASHRC" 2>/dev/null; then
-            sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$BASHRC"
-        fi
-        echo "$starship_init" >> "$BASHRC"
-        debug "Starship init added to .bashrc"
-    fi
+    wiz_update_shell_block \
+        "# --- Wiz Starship Prompt ---" \
+        "# --- End Wiz Starship Prompt ---" \
+        "$_STARSHIP_BASH_BLOCK" \
+        "$BASHRC"
 
-    # Add to Zsh - ensure it's at the end for proper initialization order
-    if [[ -f "$ZSHRC" ]]; then
-        # Remove any existing Starship config first (update pattern)
-        if grep -q "Wiz Starship Prompt" "$ZSHRC" 2>/dev/null; then
-            sed_inplace '/# --- Wiz Starship Prompt ---/,/# --- End Wiz Starship Prompt ---/d' "$ZSHRC"
-        fi
-        echo "$starship_zsh_init" >> "$ZSHRC"
-        debug "Starship init added to .zshrc"
-    fi
+    wiz_update_shell_block \
+        "# --- Wiz Starship Prompt ---" \
+        "# --- End Wiz Starship Prompt ---" \
+        "$_STARSHIP_ZSH_BLOCK" \
+        "$ZSHRC"
 
     success "Shell integration configured"
 }

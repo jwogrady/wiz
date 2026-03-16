@@ -11,19 +11,19 @@ teardown() { _common_teardown; }
 # --- tests ---
 
 @test "is_module_complete: returns false when no state file exists" {
-    run is_module_complete "no_such_module"
+    bats_run is_module_complete "no_such_module"
     [[ "$status" -ne 0 ]]
 }
 
 @test "is_module_complete: returns true after mark_module_complete" {
     mark_module_complete "mymodule"
-    run is_module_complete "mymodule"
+    bats_run is_module_complete "mymodule"
     [[ "$status" -eq 0 ]]
 }
 
 @test "is_module_complete: returns false after mark_module_failed" {
     mark_module_failed "mymodule" "something went wrong"
-    run is_module_complete "mymodule"
+    bats_run is_module_complete "mymodule"
     [[ "$status" -ne 0 ]]
 }
 
@@ -47,8 +47,8 @@ teardown() { _common_teardown; }
 @test "is_module_complete: separate modules have independent state" {
     mark_module_complete "alpha"
     mark_module_failed  "beta" "broken"
-    run is_module_complete "alpha"
+    bats_run is_module_complete "alpha"
     [[ "$status" -eq 0 ]]
-    run is_module_complete "beta"
+    bats_run is_module_complete "beta"
     [[ "$status" -ne 0 ]]
 }
