@@ -8,7 +8,7 @@
 #   KEYS_PATH            - Explicit archive path (may be empty)
 #   WIN_USER             - Windows username for cross-platform key import
 #   GIT_EMAIL            - Email for ssh-keygen -C when generating a new key
-#   FORCE                - Compat alias for WIZ_FORCE_REINSTALL (1 = overwrite)
+#   WIZ_FORCE_REINSTALL  - Set to 1 to overwrite existing keys
 #
 # Usage:
 #   source /path/to/lib/ssh.sh
@@ -19,13 +19,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # --- Ensure common.sh is sourced ---
-# SCRIPT_DIR is intentionally left as a global here — it is set only when this
-# file is sourced before common.sh (unusual path), and common.sh will overwrite
-# the WIZ_ROOT readonly once it runs.
 if ! declare -f log >/dev/null 2>&1; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh
-    source "${SCRIPT_DIR}/common.sh"
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 fi
 
 # ==============================================================================
@@ -62,7 +58,10 @@ load_ssh_keys_to_agent() {
         return 0
     fi
 
-    # Start agent if not running
+    # Start agent if not running.
+    # eval is required here: ssh-agent -s prints shell commands like
+    # "SSH_AUTH_SOCK=...; export SSH_AUTH_SOCK;" that must be eval'd to take
+    # effect in the current shell.  The command has no variable inputs.
     if [[ -z "${SSH_AUTH_SOCK:-}" ]] || ! ssh-add -l >/dev/null 2>&1; then
         eval "$(ssh-agent -s)" >/dev/null 2>&1 || return 0
         export SSH_AUTH_SOCK SSH_AGENT_PID
@@ -136,7 +135,7 @@ import_keys_from_archive() {
 
     log "Importing SSH keys from archive: $archive_path"
 
-    if [[ $FORCE -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
+    if [[ ${WIZ_FORCE_REINSTALL:-0} -eq 1 ]] || [[ ! -f "$ssh_dir/id_ed25519" ]]; then
         if extract_ssh_keys_from_archive "$archive_path" "$ssh_dir"; then
             success "SSH keys imported from archive: $archive_path"
             return 0
@@ -168,7 +167,7 @@ import_keys_from_directory() {
         basename="$(basename "$keyfile")"
         local target="$ssh_dir/$basename"
 
-        if [[ ! -f "$target" ]] || [[ $FORCE -eq 1 ]]; then
+        if [[ ! -f "$target" ]] || [[ ${WIZ_FORCE_REINSTALL:-0} -eq 1 ]]; then
             if run cp "$keyfile" "$target"; then
                 if [[ "$basename" != *.pub ]]; then
                     run chmod 600 "$target"
@@ -240,7 +239,7 @@ import_ssh_keys() {
 
     ensure_ssh_directory "$ssh_dir"
 
-    if has_ssh_keys "$ssh_dir" && [[ $FORCE -eq 0 ]]; then
+    if has_ssh_keys "$ssh_dir" && [[ ${WIZ_FORCE_REINSTALL:-0} -eq 0 ]]; then
         debug "SSH keys already present (from bootstrap), skipping import"
         return 0
     fi

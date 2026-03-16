@@ -20,11 +20,8 @@
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="bun"
@@ -81,7 +78,7 @@ install_bun() {
 
     warn "No published checksum for Bun installer — skipping SHA-256 verification"
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would execute Bun installer: ${bun_tmp}"
         rm -f "$bun_tmp"
     else
@@ -130,7 +127,7 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 # <<< Bun init <<<
 EOF
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would append Bun init block to shell profiles"
         return 0
     fi

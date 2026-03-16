@@ -27,22 +27,39 @@
 #
 # Dependency Management:
 #   - get_dependencies <module>
-#   - resolve_dependencies <module>
 #   - get_install_order <module1> <module2> ...
 #   - show_dependency_graph
+#
+# Module Verification Helpers:
+#   - check_command_installed <cmd> [display_name]
+#   - add_to_path <directory>
+#   - verify_command_exists <cmd> [display_name]
+#   - verify_file_or_dir <path> [display_name] [is_warning]
+#
+# Orchestration (used by bin/install):
+#   - list_modules
+#   - is_disabled <module>
+#   - show_installation_summary <ordered_modules>
+#   - show_statistics
+#   - execute_module_wrapper <module>
+#   - run_module_installation
 #
 # ==============================================================================
 
 set -euo pipefail
 
+# Re-source guard: prevents double-initialization when module-base.sh is sourced
+# inside a subshell that already inherited the exported functions (e.g. list_modules).
+if [[ -n "${_WIZ_MODULE_BASE_LOADED:-}" ]]; then
+    return 0 2>/dev/null || true
+fi
+_WIZ_MODULE_BASE_LOADED=1
+export _WIZ_MODULE_BASE_LOADED
+
 # --- Ensure common.sh is sourced ---
-# SCRIPT_DIR is intentionally left as a global here — it is set only when this
-# file is sourced before common.sh (unusual path).  Module files use the same
-# pattern to bootstrap their source chain.
 if ! declare -f log >/dev/null 2>&1; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh
-    source "${SCRIPT_DIR}/common.sh"
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 fi
 
 # ==============================================================================
@@ -97,62 +114,6 @@ discover_modules() {
 get_dependencies() {
     local module="$1"
     echo "${MODULE_DEPS_MAP[$module]:-}"
-}
-
-# has_dependencies: Check if module has dependencies
-# Usage: if has_dependencies <module>; then ...
-has_dependencies() {
-    local module="$1"
-    local deps
-    deps="$(get_dependencies "$module")"
-    [[ -n "$deps" ]]
-}
-
-# check_dependency: Check if a dependency is met
-# Usage: if check_dependency <dep>; then ...
-check_dependency() {
-    local dep="$1"
-    
-    # Special case: "ALL" means all previous modules must complete
-    [[ "$dep" == "ALL" ]] && return 0
-    
-    # Check if dependency module was completed successfully
-    if is_module_complete "$dep"; then
-        return 0
-    fi
-    
-    return 1
-}
-
-# resolve_dependencies: Ensure all dependencies are met
-# Usage: resolve_dependencies <module>
-resolve_dependencies() {
-    local module="$1"
-    local deps
-    deps="$(get_dependencies "$module")"
-    
-    [[ -z "$deps" ]] && return 0
-    
-    # Special case for "ALL"
-    if [[ "$deps" == "ALL" ]]; then
-        debug "Module $module requires all previous modules to complete"
-        return 0
-    fi
-    
-    # Check each dependency
-    local missing_deps=()
-    for dep in $deps; do
-        if ! check_dependency "$dep"; then
-            missing_deps+=("$dep")
-        fi
-    done
-    
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        error "Module $module has unmet dependencies: ${missing_deps[*]}"
-        return 1
-    fi
-    
-    return 0
 }
 
 # --- Topological Sort State (module-scope globals, reset per get_install_order call) ---
@@ -459,13 +420,390 @@ _module_banner() {
     printf '\n%s\n%s\n%s\n' "$sep" "$title" "$sep"
 }
 
+# ==============================================================================
+# MODULE VERIFICATION HELPERS
+# ==============================================================================
+# These functions are module-specific concerns moved here from common.sh.
+# They depend on get_command_version (from download.sh via common.sh).
+
+# check_command_installed: Check if command is installed
+# Usage: if check_command_installed <command> [command_name]; then return; fi
+# Returns 0 if already installed and should skip, 1 if should install
+# Note: Caller should handle module_skip if returning 0
+check_command_installed() {
+    local cmd="$1"
+    local cmd_name="${2:-$cmd}"
+
+    if command_exists "$cmd"; then
+        local current_version
+        current_version="$(get_command_version "$cmd")"
+
+        if [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+            log "${cmd_name} already installed: v${current_version}"
+            return 0  # Skip installation
+        else
+            log "${cmd_name} already installed: v${current_version} (forcing reinstall)"
+        fi
+    fi
+
+    return 1  # Should install
+}
+
+# add_to_path: Add directory to PATH if not already present
+# Usage: add_to_path <directory>
+add_to_path() {
+    local dir="$1"
+
+    [[ -d "$dir" ]] || return 1
+
+    if [[ ":$PATH:" != *":$dir:"* ]]; then
+        export PATH="$dir:$PATH"
+        debug "Added $dir to PATH"
+    fi
+
+    return 0
+}
+
+# verify_command_exists: Verify command exists and optionally get version
+# Usage: verify_command_exists <command> [display_name]
+# Returns 0 on success, 1 on failure (caller handles failed counter)
+verify_command_exists() {
+    local cmd="$1"
+    local display_name="${2:-$cmd}"
+
+    if ! command_exists "$cmd"; then
+        error "${display_name} command not found"
+        return 1
+    else
+        local version
+        version="$(get_command_version "$cmd")"
+        success "✓ ${display_name} v${version}"
+        return 0
+    fi
+}
+
+# verify_file_or_dir: Verify file or directory exists
+# Usage: verify_file_or_dir <path> [display_name] [is_warning]
+# Returns 0 if exists, 1 if not (caller handles failed counter)
+verify_file_or_dir() {
+    local path="$1"
+    local display_name="${2:-$path}"
+    local is_warning="${3:-0}"
+
+    if [[ -e "$path" ]]; then
+        success "✓ ${display_name}"
+        return 0
+    else
+        if [[ $is_warning -eq 1 ]]; then
+            warn "${display_name} not found: $path"
+        else
+            error "${display_name} not found: $path"
+        fi
+        return 1
+    fi
+}
+
+# ==============================================================================
+# MODULE ORCHESTRATION
+# ==============================================================================
+# Globals and functions for running modules in order. Declared here so that
+# bin/install can populate REQUESTED_MODULES/DISABLED_MODULES from CLI args and
+# call run_module_installation() without redefining the execution engine.
+
+MODULES_DIR="${WIZ_ROOT}/lib/modules"
+DISABLED_MODULES=()
+REQUESTED_MODULES=()
+# DEFAULT_MODULES is populated at startup by:
+#   mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+DEFAULT_MODULES=()
+
+# Counters (reset at the start of each run_module_installation call)
+MODULES_COMPLETED=0
+MODULES_FAILED=0
+MODULES_SKIPPED=0
+
+# list_modules: Print all available modules with version and description
+list_modules() {
+    echo "Available Modules:"
+    echo "=================="
+    echo ""
+
+    for module_file in "${MODULES_DIR}"/install_*.sh; do
+        [[ -f "$module_file" ]] || continue
+
+        local module_name
+        module_name="$(basename "$module_file" .sh)"
+        module_name="${module_name#install_}"
+
+        (
+            # shellcheck source=/dev/null
+            if ! source "$module_file" 2>/dev/null; then
+                printf "  %-15s v%-8s %s\n" \
+                    "$module_name" \
+                    "ERROR" \
+                    "Failed to load module"
+                exit 1
+            fi
+
+            # Show CLI override version if set for this module
+            local override_var="WIZ_${module_name^^}_VERSION"
+            local override_val="${!override_var:-}"
+            local version_display="${MODULE_VERSION:-unknown}"
+            if [[ -n "$override_val" ]]; then
+                version_display="${MODULE_VERSION:-unknown} (target: ${override_val})"
+            fi
+            printf "  %-15s %-18s %s\n" \
+                "$module_name" \
+                "$version_display" \
+                "${MODULE_DESCRIPTION:-No description}"
+        ) || warn "Could not read module: $module_name"
+    done
+
+    echo ""
+}
+
+# is_disabled: Check if a module is in the DISABLED_MODULES list
+is_disabled() {
+    local module="$1"
+
+    for disabled in "${DISABLED_MODULES[@]+"${DISABLED_MODULES[@]}"}"; do
+        [[ "$module" == "$disabled" ]] && return 0
+    done
+
+    return 1
+}
+
+# execute_module_wrapper: Load and run a single module file, update counters
+execute_module_wrapper() {
+    local module="$1"
+    local module_file="${MODULES_DIR}/install_${module}.sh"
+
+    if [[ ! -f "$module_file" ]]; then
+        local available
+        available="$(printf '%s\n' "${MODULES_DIR}"/install_*.sh \
+            | sed 's|.*/install_||;s|\.sh$||' \
+            | tr '\n' ' ')"
+        error "Module not found: $module" "Available modules: ${available}"
+        return 1
+    fi
+
+    if is_disabled "$module"; then
+        log "Module disabled: $module"
+        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
+        return 0
+    fi
+
+    if is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+        log "Module already completed: $module (use --force to reinstall)"
+        MODULES_SKIPPED=$((MODULES_SKIPPED + 1))
+        return 0
+    fi
+
+    # Run pre-module hooks
+    run_hooks "pre-module" "$module"
+
+    log "Executing module: $module"
+
+    if (
+        # shellcheck source=/dev/null
+        source "$module_file"
+        execute_module "$module"
+    ); then
+        MODULES_COMPLETED=$((MODULES_COMPLETED + 1))
+        # Run post-module hooks on success
+        run_hooks "post-module" "$module"
+        return 0
+    else
+        MODULES_FAILED=$((MODULES_FAILED + 1))
+        error "Module failed: $module"
+
+        if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
+            error "Stopping due to error (set WIZ_STOP_ON_ERROR=0 to continue)"
+            return 1
+        fi
+
+        return 0
+    fi
+}
+
+# show_installation_summary: Display what will be installed before starting
+show_installation_summary() {
+    local ordered_modules="$1"
+    local modules_to_install=()
+    local modules_to_skip=()
+
+    # Convert space-separated string to array
+    local module_array
+    IFS=' ' read -ra module_array <<< "$ordered_modules"
+
+    # Categorize modules
+    for module in "${module_array[@]}"; do
+        if is_disabled "$module"; then
+            continue  # Skip disabled modules
+        elif is_module_complete "$module" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+            modules_to_skip+=("$module")
+        else
+            modules_to_install+=("$module")
+        fi
+    done
+
+    # Display summary
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  INSTALLATION PLAN"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    if [[ ${#modules_to_install[@]} -gt 0 ]]; then
+        local install_display
+        install_display="$(IFS=' '; echo "${modules_to_install[*]}")"
+        printf "  📦 Will install:   %s\n" "$install_display"
+        printf "  Total modules:    %d\n" "${#modules_to_install[@]}"
+    else
+        printf "  📦 Will install:   (none - all modules completed)\n"
+    fi
+
+    if [[ ${#modules_to_skip[@]} -gt 0 ]]; then
+        local skip_display
+        skip_display="$(IFS=' '; echo "${modules_to_skip[*]}")"
+        printf "  ⊘ Will skip:       %s\n" "$skip_display"
+        printf "  Skipped count:    %d\n" "${#modules_to_skip[@]}"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# show_statistics: Print post-run module counters
+show_statistics() {
+    local total=$((MODULES_COMPLETED + MODULES_FAILED + MODULES_SKIPPED))
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  INSTALLATION STATISTICS"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    printf "  Total modules:    %d\n" "$total"
+    printf "  ✓ Completed:      %d\n" "$MODULES_COMPLETED"
+    printf "  ⊘ Skipped:        %d\n" "$MODULES_SKIPPED"
+    printf "  ✖ Failed:         %d\n" "$MODULES_FAILED"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# run_module_installation: Top-level orchestrator — sort, plan, execute all modules
+# Requires init_config() to be defined by the caller (bin/install).
+run_module_installation() {
+    log "Wiz Module Installation v0.2.0"
+    echo ""
+
+    # Reset counters for this run
+    MODULES_COMPLETED=0
+    MODULES_FAILED=0
+    MODULES_SKIPPED=0
+
+    init_config
+
+    if [[ ${#DEFAULT_MODULES[@]} -eq 0 ]]; then
+        error "No modules found in ${MODULES_DIR}"
+        return 1
+    fi
+
+    if [[ ${#REQUESTED_MODULES[@]} -eq 0 ]]; then
+        REQUESTED_MODULES=("${DEFAULT_MODULES[@]}")
+    fi
+
+    # Display modules (join with spaces for readability)
+    local modules_display
+    modules_display="$(IFS=' '; echo "${REQUESTED_MODULES[*]}")"
+    log "Modules to install: ${modules_display}"
+
+    if [[ ${#DISABLED_MODULES[@]} -gt 0 ]]; then
+        local disabled_display
+        disabled_display="$(IFS=' '; echo "${DISABLED_MODULES[*]}")"
+        log "Modules to skip: ${disabled_display}"
+    fi
+    echo ""
+
+    if ! verify_dependencies; then
+        error "Dependency verification failed"
+        return 1
+    fi
+
+    log "Resolving dependencies..."
+
+    local ordered_modules
+    if ordered_modules=$(get_install_order "${REQUESTED_MODULES[@]}"); then
+        debug "Installation order: $ordered_modules"
+    else
+        error "Failed to resolve dependencies"
+        return 1
+    fi
+
+    # Show installation plan before starting
+    show_installation_summary "$ordered_modules"
+
+    # Run pre-install hooks
+    run_hooks "pre-install"
+
+    log "Starting module installation..."
+    echo ""
+
+    # Convert space-separated string to array
+    local module_array
+    IFS=' ' read -ra module_array <<< "$ordered_modules"
+
+    local total=${#module_array[@]}
+    local current=0
+    local start_time
+    start_time=$(date +%s)
+
+    for module in "${module_array[@]}"; do
+        current=$((current + 1))
+
+        progress_bar "$current" "$total" "[$current/$total] $module" "$start_time"
+
+        if ! execute_module_wrapper "$module"; then
+            error "Module execution failed: $module" \
+                "Try: ./bin/install --module=$module --verbose --debug"
+
+            if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
+                error "Stopping installation due to error" \
+                    "Set WIZ_STOP_ON_ERROR=0 to continue on errors"
+                return 1
+            fi
+        fi
+    done
+
+    # Run post-install hooks
+    run_hooks "post-install"
+
+    show_statistics
+
+    if [[ $MODULES_FAILED -eq 0 ]]; then
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        success "  Module installation completed successfully!"
+        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        return 0
+    else
+        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        error "  Module installation completed with errors"
+        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        return 1
+    fi
+}
+
 # --- Export Functions ---
 export -f module_start module_complete module_skip module_fail
 export -f mark_module_complete mark_module_failed is_module_complete get_module_state _parse_state_value
 export -f validate_module_interface execute_module
-export -f get_dependencies has_dependencies check_dependency
-export -f resolve_dependencies get_install_order verify_dependencies _gio_remove _gio_visit
+export -f get_dependencies get_install_order verify_dependencies _gio_remove _gio_visit
 export -f show_dependency_graph _module_banner
 export -f register_module discover_modules
+export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
+export -f list_modules is_disabled show_installation_summary show_statistics
+export -f execute_module_wrapper run_module_installation
 
-debug "Module base library loaded (with dependency management)"
+debug "Module base library loaded"

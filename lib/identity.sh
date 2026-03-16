@@ -10,7 +10,7 @@
 #   GIT_EMAIL            - Email for git config user.email
 #   GITHUB_USERNAME      - GitHub handle written to .env
 #   WIN_USER             - Windows username (used by ssh.sh for key import)
-#   FORCE                - Compat alias for WIZ_FORCE_REINSTALL (1 = overwrite .env)
+#   WIZ_FORCE_REINSTALL  - Set to 1 to overwrite existing .env / .gitignore_global
 #
 # Usage:
 #   source /path/to/lib/identity.sh
@@ -21,12 +21,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # --- Ensure common.sh is sourced ---
-# SCRIPT_DIR is intentionally left as a global here — it is set only when this
-# file is sourced before common.sh (unusual path).
 if ! declare -f log >/dev/null 2>&1; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     # shellcheck source=common.sh
-    source "${SCRIPT_DIR}/common.sh"
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 fi
 
 # ==============================================================================
@@ -127,7 +124,7 @@ write_env() {
     local envfile="${WIZ_ROOT}/.env"
 
     # Load existing .env if present and not forcing
-    if [[ -f "$envfile" ]] && [[ $FORCE -eq 0 ]]; then
+    if [[ -f "$envfile" ]] && [[ ${WIZ_FORCE_REINSTALL:-0} -eq 0 ]]; then
         if validate_env "$envfile"; then
             log "Loading existing configuration from .env"
             _load_env "$envfile"
@@ -220,7 +217,7 @@ configure_git() {
     # Create global .gitignore
     local gitignore="${HOME}/.gitignore_global"
 
-    if [[ ! -f "$gitignore" ]] || [[ $FORCE -eq 1 ]]; then
+    if [[ ! -f "$gitignore" ]] || [[ ${WIZ_FORCE_REINSTALL:-0} -eq 1 ]]; then
         log "Creating global .gitignore..."
 
         cat > "$gitignore" << 'EOF'

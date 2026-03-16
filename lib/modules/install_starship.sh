@@ -20,11 +20,8 @@
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="starship"
@@ -376,7 +373,7 @@ fi
 # --- End Wiz Starship Prompt ---
 '
     
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would configure Starship init in shell profiles"
         success "Shell integration configured"
         return 0

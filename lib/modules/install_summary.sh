@@ -19,11 +19,8 @@
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base (which sources common.sh)
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Ensure color variables are available (defensive fallback)
 # These should be set by common.sh, but provide fallbacks if not
@@ -77,8 +74,7 @@ show_completion_report() {
     # Installed modules
     log "Installed Modules:"
     local modules_installed=0
-    # SCRIPT_DIR already points to lib/modules, so use it directly
-    local modules_dir="${SCRIPT_DIR}"
+    local modules_dir="${WIZ_ROOT}/lib/modules"
     for module_file in "${modules_dir}"/install_*.sh; do
         [[ -f "$module_file" ]] || continue
         

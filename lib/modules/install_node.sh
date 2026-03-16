@@ -21,11 +21,8 @@
 set -euo pipefail
 
 # --- Module Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source module base
 # shellcheck source=../module-base.sh
-source "${SCRIPT_DIR}/../module-base.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
 
 # Module metadata
 MODULE_NAME="node"
@@ -37,8 +34,8 @@ MODULE_DEPS="essentials"
 NVM_VERSION="v0.39.7"
 NVM_DIR="${HOME}/.nvm"
 # SHA-256 of the NVM install.sh for NVM_VERSION above.
-# Empty string disables verification (warns and proceeds).
-# To get the value: curl -fsSL <url> | sha256sum
+# Must be set — installation aborts if empty (fail-closed security posture).
+# To obtain: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum
 # Update this constant whenever NVM_VERSION is bumped.
 NVM_INSTALLER_SHA256=""
 
@@ -84,18 +81,19 @@ install_node() {
             module_fail "NVM installation failed"
         }
 
-        # Verify checksum before executing (skip if NVM_INSTALLER_SHA256 is empty)
-        if [[ -n "$NVM_INSTALLER_SHA256" ]]; then
-            local verify_result=0
-            verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
-            if [[ $verify_result -eq 1 ]]; then
-                rm -f "$nvm_tmp"
-                module_fail "NVM installer checksum mismatch — aborting for security"
-            fi
-            # verify_result=2 means no sha tool available; warn already emitted, proceed
-        else
-            warn "NVM_INSTALLER_SHA256 not set — skipping SHA-256 verification"
+        # Verify checksum before executing.
+        # NVM_INSTALLER_SHA256 must be set — fail closed if empty.
+        if [[ -z "$NVM_INSTALLER_SHA256" ]]; then
+            rm -f "$nvm_tmp"
+            module_fail "NVM_INSTALLER_SHA256 is not set. To obtain the value, run: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum"
         fi
+        local verify_result=0
+        verify_sha256 "$nvm_tmp" "$NVM_INSTALLER_SHA256" || verify_result=$?
+        if [[ $verify_result -eq 1 ]]; then
+            rm -f "$nvm_tmp"
+            module_fail "NVM installer checksum mismatch — aborting for security"
+        fi
+        # verify_result=2 means no sha tool available; warn already emitted, proceed
 
         run_shell "bash '$nvm_tmp'" || {
             rm -f "$nvm_tmp"
@@ -200,7 +198,7 @@ add_nvm_to_shell_rc() {
     local rc_file="$1"
 
     # Skip if file doesn't exist and we're not in dry-run
-    [[ ! -e "$rc_file" ]] && [[ $DRY_RUN -eq 0 ]] && return 0
+    [[ ! -e "$rc_file" ]] && [[ ${WIZ_DRY_RUN:-0} -eq 0 ]] && return 0
 
     local nvm_init='
 # >>> NVM init >>>
@@ -209,7 +207,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 # <<< NVM init <<<'
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would append NVM init block to ${rc_file}"
         return 0
     fi

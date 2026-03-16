@@ -12,6 +12,9 @@
 # Functions (direct):
 #   - log, warn, error, success, debug, progress
 #   - run, run_stream, run_shell
+#
+# Module-specific helpers (defined in lib/module-base.sh):
+#   - check_command_installed, add_to_path, verify_command_exists, verify_file_or_dir
 #   - backup_file, append_to_file_once
 #   - command_exists, detect_os, detect_shell, is_wsl
 #   - run_hooks
@@ -207,7 +210,7 @@ mkdir -p "$WIZ_STATE_DIR"
 # every message.  The guard prevents duplicate opens when common.sh is
 # re-sourced in a subshell that already inherited the FD.
 if [[ -z "${_WIZ_LOG_FD:-}" ]]; then
-    exec {_WIZ_LOG_FD}>>"$LOG_FILE"
+    exec {_WIZ_LOG_FD}>>"$WIZ_LOG_FILE"
     export _WIZ_LOG_FD
     trap 'exec {_WIZ_LOG_FD}>&-' EXIT
 fi
@@ -234,13 +237,13 @@ _write_log() {
     if [[ -n "${_WIZ_LOG_FD:-}" ]]; then
         echo "[$(timestamp)] [$level] $*" >&"$_WIZ_LOG_FD"
     else
-        echo "[$(timestamp)] [$level] $*" >> "$LOG_FILE"
+        echo "[$(timestamp)] [$level] $*" >> "$WIZ_LOG_FILE"
     fi
 }
 
 # debug: Debug-level log (dim cyan) - level 0
 debug() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 0 ]] || return 0
     # Defensive color variable initialization
     local dim="${DIM:-}"
@@ -258,7 +261,7 @@ debug() {
 
 # log: Info-level log (green) - level 1
 log() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 1 ]] || return 0
     # Ensure color variables are available (defensive)
     local green="${GREEN:-}"
@@ -274,7 +277,7 @@ log() {
 
 # warn: Warning-level log (yellow) - level 2
 warn() {
-    local level="${LOG_LEVEL:-1}"
+    local level="${WIZ_LOG_LEVEL:-1}"
     [[ $level -le 2 ]] || return 0
     echo -e "${YELLOW}⚠${NC} $*" >&2
     # Only call _write_log if it's available (defensive for trap contexts)
@@ -350,12 +353,12 @@ progress() {
 # - Verbose mode support for debugging
 # - Proper error handling and exit code propagation
 
-# _run_common_pre: Shared pre-execution logic
+# _wiz_run_pre: Shared pre-execution logic
 # Returns 0 if should skip execution (dry-run), 1 if should execute
-_run_common_pre() {
+_wiz_run_pre() {
     local display_cmd="$1"
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         local dim="${DIM:-\033[2m}"
         local nc="${NC:-\033[0m}"
         echo -e "${dim}[DRY-RUN]${nc} $display_cmd"
@@ -363,18 +366,18 @@ _run_common_pre() {
         return 0
     fi
 
-    [[ $VERBOSE -eq 1 ]] && debug "Executing: $display_cmd"
+    [[ ${WIZ_VERBOSE:-0} -eq 1 ]] && debug "Executing: $display_cmd"
     declare -f _write_log >/dev/null 2>&1 && _write_log "EXEC" "$display_cmd"
     return 1
 }
 
-# _run_common_post: Shared post-execution logic
-_run_common_post() {
+# _wiz_run_post: Shared post-execution logic
+_wiz_run_post() {
     local exit_code="$1"
     local display_cmd="$2"
 
     if [[ $exit_code -eq 0 ]]; then
-        [[ $VERBOSE -eq 1 ]] && debug "Success: $display_cmd"
+        [[ ${WIZ_VERBOSE:-0} -eq 1 ]] && debug "Success: $display_cmd"
         return 0
     fi
 
@@ -412,7 +415,7 @@ run() {
         done
     fi
 
-    if _run_common_pre "$display_cmd"; then
+    if _wiz_run_pre "$display_cmd"; then
         return 0
     fi
 
@@ -424,7 +427,7 @@ run() {
     # Filter harmless systemd warnings from apt
     echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
 
-    _run_common_post "$exit_code" "$display_cmd"
+    _wiz_run_post "$exit_code" "$display_cmd"
 }
 
 # run_stream: Execute command safely, streaming output directly to terminal
@@ -446,7 +449,7 @@ run_stream() {
         done
     fi
 
-    if _run_common_pre "$display_cmd"; then
+    if _wiz_run_pre "$display_cmd"; then
         return 0
     fi
 
@@ -454,7 +457,7 @@ run_stream() {
     local exit_code=0
     "$@" || exit_code=$?
 
-    _run_common_post "$exit_code" "$display_cmd"
+    _wiz_run_post "$exit_code" "$display_cmd"
 }
 
 # run_shell: Execute command string with shell interpretation
@@ -466,7 +469,7 @@ run_stream() {
 run_shell() {
     local cmd="$*"
 
-    if _run_common_pre "$cmd"; then
+    if _wiz_run_pre "$cmd"; then
         return 0
     fi
 
@@ -478,7 +481,7 @@ run_shell() {
     # Filter harmless systemd warnings from apt
     echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
 
-    _run_common_post "$exit_code" "$cmd"
+    _wiz_run_post "$exit_code" "$cmd"
 }
 
 # --- Environment Detection ---
@@ -598,7 +601,7 @@ append_to_file_once() {
     local marker="$2"
     local content="$3"
 
-    if [[ $DRY_RUN -eq 1 ]]; then
+    if [[ ${WIZ_DRY_RUN:-0} -eq 1 ]]; then
         log "[DRY-RUN] Would append to $file (marker: $marker)"
         return 0
     fi
@@ -633,83 +636,6 @@ source "${WIZ_ROOT}/lib/pkg.sh"
 source "${WIZ_ROOT}/lib/download.sh"
 # shellcheck source=ui.sh
 source "${WIZ_ROOT}/lib/ui.sh"
-
-# check_command_installed: Check if command is installed
-# Usage: if check_command_installed <command> [command_name]; then return; fi
-# Returns 0 if already installed and should skip, 1 if should install
-# Note: Caller should handle module_skip if returning 0
-check_command_installed() {
-    local cmd="$1"
-    local cmd_name="${2:-$cmd}"
-    
-    if command_exists "$cmd"; then
-        local current_version
-        current_version="$(get_command_version "$cmd")"
-        
-        if [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
-            log "${cmd_name} already installed: v${current_version}"
-            return 0  # Skip installation
-        else
-            log "${cmd_name} already installed: v${current_version} (forcing reinstall)"
-        fi
-    fi
-    
-    return 1  # Should install
-}
-
-# add_to_path: Add directory to PATH if not already present
-# Usage: add_to_path <directory>
-add_to_path() {
-    local dir="$1"
-    
-    [[ -d "$dir" ]] || return 1
-    
-    if [[ ":$PATH:" != *":$dir:"* ]]; then
-        export PATH="$dir:$PATH"
-        debug "Added $dir to PATH"
-    fi
-    
-    return 0
-}
-
-# verify_command_exists: Verify command exists and optionally get version
-# Usage: verify_command_exists <command> [display_name]
-# Returns 0 on success, 1 on failure (caller handles failed counter)
-verify_command_exists() {
-    local cmd="$1"
-    local display_name="${2:-$cmd}"
-    
-    if ! command_exists "$cmd"; then
-        error "${display_name} command not found"
-        return 1
-    else
-        local version
-        version="$(get_command_version "$cmd")"
-        success "✓ ${display_name} v${version}"
-        return 0
-    fi
-}
-
-# verify_file_or_dir: Verify file or directory exists
-# Usage: verify_file_or_dir <path> [display_name] [is_warning]
-# Returns 0 if exists, 1 if not (caller handles failed counter)
-verify_file_or_dir() {
-    local path="$1"
-    local display_name="${2:-$path}"
-    local is_warning="${3:-0}"
-    
-    if [[ -e "$path" ]]; then
-        success "✓ ${display_name}"
-        return 0
-    else
-        if [[ $is_warning -eq 1 ]]; then
-            warn "${display_name} not found: $path"
-        else
-            error "${display_name} not found: $path"
-        fi
-        return 1
-    fi
-}
 
 # --- Hooks System ---
 # Allows extensibility through user-defined scripts in hooks directories
@@ -770,13 +696,11 @@ run_hooks() {
 export -f wiz_config_get wiz_config_set wiz_is_dry_run wiz_is_verbose wiz_is_force
 export -f run_hooks
 export -f timestamp log warn error success debug progress _write_log
-export -f run run_stream run_shell _run_common_pre _run_common_post
+export -f run run_stream run_shell _wiz_run_pre _wiz_run_post
 export -f backup_file append_to_file_once
 export -f command_exists
 export -f detect_os detect_shell is_wsl is_macos is_linux sed_inplace
 export -f detect_windows_user
-export -f check_command_installed add_to_path verify_command_exists verify_file_or_dir
-
 # --- Error Handling ---
 # Trap errors and print helpful message with line number and command
 # Set trap AFTER all functions are defined and logging is initialized
@@ -788,4 +712,4 @@ debug "Common library loaded from: ${BASH_SOURCE[0]}"
 debug "Wiz root: $WIZ_ROOT"
 
 debug "Log file: $LOG_FILE"
-debug "Dry-run: $DRY_RUN"
+debug "Dry-run: $WIZ_DRY_RUN"
