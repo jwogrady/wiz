@@ -79,14 +79,18 @@ WIZ_NODE_VERSION="${WIZ_NODE_VERSION:-}"
 WIZ_BUN_VERSION="${WIZ_BUN_VERSION:-}"
 WIZ_STARSHIP_VERSION="${WIZ_STARSHIP_VERSION:-}"
 
-# Backward compatibility aliases (deprecated, use WIZ_ prefix instead)
-LOG_DIR="$WIZ_LOG_DIR"
-CACHE_DIR="$WIZ_CACHE_DIR"
-SSH_FINGERPRINT_CACHE_DIR="$WIZ_SSH_FINGERPRINT_CACHE_DIR"
-DRY_RUN="$WIZ_DRY_RUN"
-LOG_LEVEL="$WIZ_LOG_LEVEL"
-LOG_FILE="$WIZ_LOG_FILE"
-VERBOSE="$WIZ_VERBOSE"
+# Backward compatibility aliases — DEPRECATED.
+# Use the WIZ_ prefixed variables instead. These aliases will be removed in a
+# future release. Any code still referencing LOG_DIR, CACHE_DIR, DRY_RUN,
+# LOG_LEVEL, LOG_FILE, or VERBOSE should be updated to use WIZ_LOG_DIR,
+# WIZ_CACHE_DIR, WIZ_DRY_RUN, WIZ_LOG_LEVEL, WIZ_LOG_FILE, or WIZ_VERBOSE.
+LOG_DIR="$WIZ_LOG_DIR"           # deprecated: use WIZ_LOG_DIR
+CACHE_DIR="$WIZ_CACHE_DIR"       # deprecated: use WIZ_CACHE_DIR
+SSH_FINGERPRINT_CACHE_DIR="$WIZ_SSH_FINGERPRINT_CACHE_DIR"  # deprecated: use WIZ_SSH_FINGERPRINT_CACHE_DIR
+DRY_RUN="$WIZ_DRY_RUN"           # deprecated: use WIZ_DRY_RUN
+LOG_LEVEL="$WIZ_LOG_LEVEL"       # deprecated: use WIZ_LOG_LEVEL
+LOG_FILE="$WIZ_LOG_FILE"         # deprecated: use WIZ_LOG_FILE
+VERBOSE="$WIZ_VERBOSE"           # deprecated: use WIZ_VERBOSE
 
 # Export all WIZ_ variables for subprocesses
 export WIZ_VERSION WIZ_CODENAME
