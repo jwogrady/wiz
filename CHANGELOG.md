@@ -9,6 +9,10 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] — 2026-03-16
+
 ### ✨ Features
 - Mission Control UX: preflight briefing, per-module progress lines, and final
   summary screen (`show_preflight`, `show_module_header`, `show_module_result`,
