@@ -29,11 +29,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ### 🐛 Bug Fixes
 - Fixed operator precedence bug in `verify_dependencies()`
 - Set `NVM_INSTALLER_SHA256` for NVM v0.39.7 (was blank; blocked every fresh install)
+- Fixed `bin/bootstrap` to be fully self-contained for curl-pipe installs
+- Prevented `chsh` and `dpkg-preconfigure` hangs in non-interactive mode
+- Hardened input validation, temp file handling, and `tar` extraction
 - Renamed `show_installation_summary()` to avoid name collision with install_summary module
 - Renamed shadowing `basename` locals; added nullglob guards in archive extraction
 - Moved `get_cached_ssh_fingerprint()` from `common.sh` to `ssh.sh`
 - Unknown CLI flags in `bin/install` now exit with code 2 instead of warn-and-continue
-- Resolved all HIGH-severity audit findings
+- Resolved all HIGH-severity security audit findings
 
 ### ⚡ Performance Improvements
 - Batch apt pre-check in `install_packages()` via single `dpkg-query`
@@ -47,6 +50,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### 🤖 Continuous Integration
 - Added BATS test workflow (`.github/workflows/test.yml`)
+- Fixed ShellCheck workflow file patterns and severity filter
 
 ### 📚 Documentation
 - Added deprecation notices to backward-compat variable aliases in `common.sh`
