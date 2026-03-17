@@ -224,9 +224,8 @@ show_launch_summary() {
     local log_display="${WIZ_LOG_FILE:-}"
     log_display="${log_display/#$HOME/\~}"
 
-    local total_ran
-    total_ran=$(( ${MODULES_COMPLETED:-0} + ${MODULES_FAILED:-0} \
-        + ${MODULES_SKIPPED:-0} ))
+    local total_ran=$(( ${MODULES_COMPLETED:-0} \
+        + ${MODULES_FAILED:-0} + ${MODULES_SKIPPED:-0} ))
 
     echo ""
     printf "%s\n" "$sep"
@@ -256,7 +255,7 @@ show_launch_summary() {
         echo ""
     fi
 
-    if [[ "$skip_identity" == "0" ]] && [[ -n "$git_name" ]]; then
+    if [[ $skip_identity -eq 0 ]] && [[ -n "$git_name" ]]; then
         printf "  ${BOLD}Git${NC}    %s <%s>\n" "$git_name" "$git_email"
         echo ""
     fi
@@ -266,7 +265,7 @@ show_launch_summary() {
     echo ""
     printf "  ${DIM}Log${NC}    %s\n" "$log_display"
 
-    if [[ "$skip_identity" == "1" ]]; then
+    if [[ $skip_identity -eq 1 ]]; then
         echo ""
         printf \
             "  ${DIM}Identity:  ./bin/install --skip-modules${NC}\n"
