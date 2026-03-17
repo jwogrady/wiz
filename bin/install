@@ -284,8 +284,7 @@ main() {
     # Show banner
     show_banner
     
-    log "Starting Wiz installation..."
-    log "Log file: ${WIZ_LOG_FILE:-logs/install_$(date +%F).log}"
+    debug "Starting Wiz installation"
     echo ""
     
     # PHASE 1: Development Tools Installation (unless skipped)
@@ -294,7 +293,7 @@ main() {
         echo ""
         
         if ! run_module_installation; then
-            error "Module installation failed"
+            show_launch_summary "1" "" ""
             exit 1
         fi
     fi
@@ -328,59 +327,20 @@ main() {
         configure_ssh_agent
         echo ""
         
-        # Success message
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        success "  Identity setup complete!"
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        
-        log "Git configured as: ${BOLD}$GIT_NAME <$GIT_EMAIL>${NC}"
-        log "GitHub username: ${BOLD}$GITHUB_USERNAME${NC}"
-        log "SSH keys: ${BOLD}$HOME/.ssh/${NC}"
+        success "Identity configured: ${GIT_NAME} <${GIT_EMAIL}>"
         echo ""
     fi
     
-    # Final Success Message
-    if [[ $SKIP_IDENTITY -eq 1 ]]; then
-        # Phase 1 complete - show message (no prompt, user can run Phase 2 manually)
-        echo ""
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        success "  PHASE 1 COMPLETE: Development Tools Installation ✓"
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        log "To configure Git identity and SSH keys later, run:"
-        log "  ${BOLD}cd ~/wiz && ./bin/install --skip-modules${NC}"
-        echo ""
-    else
-        # Full installation complete
-        echo ""
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        success "  🌌 WIZ INSTALLATION COMPLETE! ✨"
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        
-        log "Next steps:"
-        log "  1. Review configuration files in ~/.config/"
-        log "  2. Check installed tools: git, docker, nvim, node, etc."
-        echo ""
-        
-        # Prompt before reloading shell (better UX)
-        echo ""
-        log "${BOLD}✨ Installation complete!${NC}"
-        log "To apply all changes, restart your terminal or run:"
-        log "  ${BOLD}exec zsh${NC}  (or ${BOLD}exec bash${NC})"
-        echo ""
-        
-        # Only auto-reload if explicitly requested (via environment variable)
-        if [[ "${WIZ_AUTO_RELOAD_SHELL:-0}" == "1" ]]; then
-            log "Auto-reloading shell (WIZ_AUTO_RELOAD_SHELL=1)..."
-            if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
-                exec zsh
-            elif [[ -f "$HOME/.bashrc" ]]; then
-                exec bash
-            fi
-        else
-            log "Shell will not auto-reload. Restart manually to apply changes."
+    # Final launch summary
+    show_launch_summary "$SKIP_IDENTITY" "${GIT_NAME:-}" "${GIT_EMAIL:-}"
+
+    # Auto-reload shell if explicitly requested
+    if [[ "${WIZ_AUTO_RELOAD_SHELL:-0}" == "1" ]]; then
+        debug "Auto-reloading shell (WIZ_AUTO_RELOAD_SHELL=1)..."
+        if command_exists zsh && [[ -f "$HOME/.zshrc" ]]; then
+            exec zsh
+        elif [[ -f "$HOME/.bashrc" ]]; then
+            exec bash
         fi
     fi
 }

@@ -237,21 +237,20 @@ MODULE_DEPS="${MODULE_DEPS:-}"
 
 # --- Module Lifecycle Functions ---
 
-# module_start: Log module installation start
+# module_start: Log module installation start (debug-level; shown only with --verbose)
 module_start() {
-    log ""
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    # Defensive color variable initialization
+    debug ""
+    debug "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     local bold="${BOLD:-}"
     local nc="${NC:-}"
     [[ -z "$bold" ]] && bold='\033[1m'
     [[ -z "$nc" ]] && nc='\033[0m'
-    log "Module: ${bold}${MODULE_NAME}${nc}"
-    log "Version: ${MODULE_VERSION}"
-    log "Description: ${MODULE_DESCRIPTION}"
-    [[ -n "$MODULE_DEPS" ]] && log "Dependencies: $MODULE_DEPS"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log ""
+    debug "Module: ${bold}${MODULE_NAME}${nc}"
+    debug "Version: ${MODULE_VERSION}"
+    debug "Description: ${MODULE_DESCRIPTION}"
+    [[ -n "$MODULE_DEPS" ]] && debug "Dependencies: $MODULE_DEPS"
+    debug "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    debug ""
 }
 
 # module_complete: Mark module as successfully completed
@@ -743,8 +742,7 @@ show_statistics() {
 # run_module_installation: Top-level orchestrator — sort, plan, execute all modules
 # Requires init_config() to be defined by the caller (bin/install).
 run_module_installation() {
-    log "Wiz Module Installation v${WIZ_VERSION}"
-    echo ""
+    debug "Wiz Module Installation v${WIZ_VERSION}"
 
     # Reset counters for this run
     MODULES_COMPLETED=0
@@ -762,24 +760,16 @@ run_module_installation() {
         REQUESTED_MODULES=("${DEFAULT_MODULES[@]}")
     fi
 
-    # Display modules (join with spaces for readability)
-    local modules_display
-    modules_display="$(IFS=' '; echo "${REQUESTED_MODULES[*]}")"
-    log "Modules to install: ${modules_display}"
-
-    if [[ ${#DISABLED_MODULES[@]} -gt 0 ]]; then
-        local disabled_display
-        disabled_display="$(IFS=' '; echo "${DISABLED_MODULES[*]}")"
-        log "Modules to skip: ${disabled_display}"
-    fi
-    echo ""
+    debug "Modules requested: $(IFS=' '; echo "${REQUESTED_MODULES[*]}")"
+    [[ ${#DISABLED_MODULES[@]} -gt 0 ]] && \
+        debug "Modules disabled: $(IFS=' '; echo "${DISABLED_MODULES[*]}")"
 
     if ! verify_dependencies; then
         error "Dependency verification failed"
         return 1
     fi
 
-    log "Resolving dependencies..."
+    debug "Resolving dependencies..."
 
     local ordered_modules
     if ordered_modules=$(get_install_order "${REQUESTED_MODULES[@]}"); then
@@ -789,14 +779,11 @@ run_module_installation() {
         return 1
     fi
 
-    # Show installation plan before starting
-    show_installation_summary "$ordered_modules"
+    # Preflight mission briefing
+    show_preflight "$ordered_modules"
 
     # Run pre-install hooks
     run_hooks "pre-install"
-
-    log "Starting module installation..."
-    echo ""
 
     # Convert space-separated string to array
     local module_array
@@ -804,42 +791,37 @@ run_module_installation() {
 
     local total=${#module_array[@]}
     local current=0
-    local start_time
-    start_time=$(date +%s)
+    local _prev_skipped _mod_start _elapsed
 
     for module in "${module_array[@]}"; do
         current=$((current + 1))
+        _prev_skipped=$MODULES_SKIPPED
+        _mod_start=$(date +%s)
 
-        progress_bar "$current" "$total" "[$current/$total] $module" "$start_time"
+        show_module_header "$current" "$total" "$module"
 
         if ! execute_module_wrapper "$module"; then
-            error "Module execution failed: $module" \
-                "Try: ./bin/install --module=$module --verbose --debug"
+            _elapsed=$(( $(date +%s) - _mod_start ))
+            show_module_result "$module" "fail" "$_elapsed"
+            error "Module failed: $module — try: ./bin/install --module=$module --verbose --debug"
 
             if [[ "${WIZ_STOP_ON_ERROR:-1}" == "1" ]]; then
-                error "Stopping installation due to error" \
-                    "Set WIZ_STOP_ON_ERROR=0 to continue on errors"
+                error "Stopping on error  (WIZ_STOP_ON_ERROR=0 to continue)"
                 return 1
             fi
+        elif [[ $MODULES_SKIPPED -gt $_prev_skipped ]]; then
+            show_module_result "$module" "skip" "0"
+        else
+            _elapsed=$(( $(date +%s) - _mod_start ))
+            show_module_result "$module" "ok" "$_elapsed"
         fi
     done
 
     # Run post-install hooks
     run_hooks "post-install"
 
-    show_statistics
-
-    if [[ $MODULES_FAILED -eq 0 ]]; then
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        success "  Module installation completed successfully!"
-        success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        return 0
-    else
-        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        error "  Module installation completed with errors"
-        error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        return 1
-    fi
+    echo ""
+    [[ $MODULES_FAILED -eq 0 ]] && return 0 || return 1
 }
 
 # --- Export Functions ---

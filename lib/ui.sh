@@ -117,6 +117,155 @@ spinner() {
     return $exit_code
 }
 
+# show_preflight: Pre-run mission briefing
+# Usage: show_preflight <ordered_modules_space_separated>
+# Calls is_disabled / is_module_complete — available at call time via module-base.sh.
+show_preflight() {
+    local ordered_modules="$1"
+    local module_array
+    IFS=' ' read -ra module_array <<< "$ordered_modules"
+
+    local mode_label
+    if [[ "${WIZ_DRY_RUN:-0}" == "1" ]]; then
+        mode_label="${YELLOW}DRY RUN${NC}"
+    else
+        mode_label="live"
+    fi
+
+    local bash_ver="${BASH_VERSION%%(*}"
+
+    local will_install=() will_skip=()
+    local m
+    for m in "${module_array[@]}"; do
+        if is_disabled "$m"; then
+            continue
+        elif is_module_complete "$m" && [[ "${WIZ_FORCE_REINSTALL:-0}" != "1" ]]; then
+            will_skip+=("$m")
+        else
+            will_install+=("$m")
+        fi
+    done
+
+    local count=${#will_install[@]}
+    local plural; [[ $count -ne 1 ]] && plural="s" || plural=""
+    local sep="  ─────────────────────────────────────────────────"
+
+    echo ""
+    printf "%s\n" "$sep"
+    printf "  Mission: ${BOLD}%d module%s${NC}  ·  %b  ·  Bash %s\n" \
+        "$count" "$plural" "$mode_label" "$bash_ver"
+    printf "%s\n" "$sep"
+    echo ""
+
+    local mod_file raw_desc desc
+    for m in "${will_install[@]+"${will_install[@]}"}"; do
+        mod_file="${MODULES_DIR:-${WIZ_ROOT}/lib/modules}/install_${m}.sh"
+        desc=""
+        if [[ -f "$mod_file" ]]; then
+            raw_desc=$(grep -m1 '^MODULE_DESCRIPTION=' "$mod_file" 2>/dev/null || true)
+            if [[ -n "$raw_desc" ]]; then
+                raw_desc="${raw_desc#MODULE_DESCRIPTION=}"
+                raw_desc="${raw_desc#\"}" ; raw_desc="${raw_desc%\"}"
+                raw_desc="${raw_desc#\'}" ; raw_desc="${raw_desc%\'}"
+                desc="$raw_desc"
+            fi
+        fi
+        if [[ -n "$desc" ]]; then
+            printf "  ${CYAN}▶${NC}  %-14s  ${DIM}%s${NC}\n" "$m" "$desc"
+        else
+            printf "  ${CYAN}▶${NC}  %s\n" "$m"
+        fi
+    done
+
+    if [[ ${#will_skip[@]} -gt 0 ]]; then
+        echo ""
+        for m in "${will_skip[@]}"; do
+            printf "  ${DIM}⊘  %-14s  already installed${NC}\n" "$m"
+        done
+    fi
+
+    local log_display="${WIZ_LOG_FILE:-}"
+    log_display="${log_display/#$HOME/\~}"
+
+    echo ""
+    printf "  ${DIM}Log  %s${NC}\n" "$log_display"
+    echo ""
+}
+
+# show_module_header: Per-module progress line printed before execution
+# Usage: show_module_header <current> <total> <module>
+show_module_header() {
+    local current="$1" total="$2" module="$3"
+    echo ""
+    printf "  ${BLUE}[%d/%d]${NC}  ${BOLD}%s${NC}\n" "$current" "$total" "$module"
+    echo ""
+}
+
+# show_module_result: Status line printed after each module execution
+# Usage: show_module_result <module> <ok|skip|fail> <elapsed_seconds>
+show_module_result() {
+    local module="$1" status="$2" elapsed="${3:-0}"
+    case "$status" in
+        ok)   printf "  ${GREEN}✓${NC}  %-14s  ${DIM}%ss${NC}\n" "$module" "$elapsed" ;;
+        skip) printf "  ${DIM}⊘  %-14s  already installed${NC}\n" "$module" ;;
+        fail) printf "  ${RED}✖${NC}  %-14s  ${DIM}%ss${NC}\n" "$module" "$elapsed" ;;
+    esac
+}
+
+# show_launch_summary: Final screen shown after full install
+# Usage: show_launch_summary <skip_identity> <git_name> <git_email>
+# Reads MODULES_COMPLETED / MODULES_FAILED / MODULES_SKIPPED from module-base.sh globals.
+show_launch_summary() {
+    local skip_identity="${1:-0}"
+    local git_name="${2:-}"
+    local git_email="${3:-}"
+
+    local sep="  ─────────────────────────────────────────────────"
+    local log_display="${WIZ_LOG_FILE:-}"
+    log_display="${log_display/#$HOME/\~}"
+
+    local total_ran=$(( ${MODULES_COMPLETED:-0} + ${MODULES_FAILED:-0} + ${MODULES_SKIPPED:-0} ))
+
+    echo ""
+    printf "%s\n" "$sep"
+
+    if [[ ${MODULES_FAILED:-0} -eq 0 ]]; then
+        printf "  ${GREEN}${BOLD}✓ Wiz complete${NC}"
+    else
+        printf "  ${RED}${BOLD}✖ Wiz done with errors${NC}"
+    fi
+
+    if [[ $total_ran -gt 0 ]]; then
+        [[ ${MODULES_COMPLETED:-0} -gt 0 ]] && \
+            printf "  ·  ${BOLD}%d installed${NC}" "${MODULES_COMPLETED}"
+        [[ ${MODULES_FAILED:-0} -gt 0 ]] && \
+            printf "  ·  ${RED}%d failed${NC}" "${MODULES_FAILED}"
+        [[ ${MODULES_SKIPPED:-0} -gt 0 ]] && \
+            printf "  ·  ${DIM}%d skipped${NC}" "${MODULES_SKIPPED}"
+    fi
+    echo ""
+
+    printf "%s\n" "$sep"
+    echo ""
+
+    if [[ "$skip_identity" == "0" ]] && [[ -n "$git_name" ]]; then
+        printf "  ${DIM}Git${NC}   %s <%s>\n" "$git_name" "$git_email"
+        echo ""
+    fi
+
+    printf "  ${BOLD}Next${NC}   exec zsh\n"
+    printf "         ${DIM}or: exec bash${NC}\n"
+    echo ""
+    printf "  ${DIM}Log    %s${NC}\n" "$log_display"
+
+    if [[ "$skip_identity" == "1" ]]; then
+        echo ""
+        printf "  ${DIM}Run identity setup later:  ./bin/install --skip-modules${NC}\n"
+    fi
+
+    echo ""
+}
+
 # show_banner: Display application banner
 show_banner() {
     cat << 'EOF'
@@ -135,5 +284,6 @@ EOF
 
 # --- Export Functions ---
 export -f progress_bar spinner show_banner
+export -f show_preflight show_module_header show_module_result show_launch_summary
 
 debug "UI helpers library loaded"
