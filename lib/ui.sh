@@ -152,7 +152,7 @@ show_preflight() {
 
     echo ""
     printf "%s\n" "$sep"
-    printf "  Mission: ${BOLD}%d module%s${NC}  ·  %b  ·  Bash %s\n" \
+    printf "  ${BOLD}%d module%s${NC}  ·  %b  ·  Bash %s\n" \
         "$count" "$plural" "$mode_label" "$bash_ver"
     printf "%s\n" "$sep"
     echo ""
@@ -224,43 +224,52 @@ show_launch_summary() {
     local log_display="${WIZ_LOG_FILE:-}"
     log_display="${log_display/#$HOME/\~}"
 
-    local total_ran=$(( ${MODULES_COMPLETED:-0} + ${MODULES_FAILED:-0} + ${MODULES_SKIPPED:-0} ))
+    local total_ran
+    total_ran=$(( ${MODULES_COMPLETED:-0} + ${MODULES_FAILED:-0} \
+        + ${MODULES_SKIPPED:-0} ))
 
     echo ""
     printf "%s\n" "$sep"
 
     if [[ ${MODULES_FAILED:-0} -eq 0 ]]; then
-        printf "  ${GREEN}${BOLD}✓ Wiz complete${NC}"
+        printf "  ${GREEN}${BOLD}✓  Wiz complete${NC}\n"
     else
-        printf "  ${RED}${BOLD}✖ Wiz done with errors${NC}"
+        printf "  ${RED}${BOLD}✖  Installation incomplete${NC}\n"
     fi
-
-    if [[ $total_ran -gt 0 ]]; then
-        [[ ${MODULES_COMPLETED:-0} -gt 0 ]] && \
-            printf "  ·  ${BOLD}%d installed${NC}" "${MODULES_COMPLETED}"
-        [[ ${MODULES_FAILED:-0} -gt 0 ]] && \
-            printf "  ·  ${RED}%d failed${NC}" "${MODULES_FAILED}"
-        [[ ${MODULES_SKIPPED:-0} -gt 0 ]] && \
-            printf "  ·  ${DIM}%d skipped${NC}" "${MODULES_SKIPPED}"
-    fi
-    echo ""
 
     printf "%s\n" "$sep"
     echo ""
 
+    if [[ $total_ran -gt 0 ]]; then
+        local _stats=""
+        [[ ${MODULES_COMPLETED:-0} -gt 0 ]] && \
+            _stats="${MODULES_COMPLETED} installed"
+        [[ ${MODULES_FAILED:-0} -gt 0 ]] && {
+            [[ -n "$_stats" ]] && _stats+="  ·  "
+            _stats+="${MODULES_FAILED} failed"
+        }
+        [[ ${MODULES_SKIPPED:-0} -gt 0 ]] && {
+            [[ -n "$_stats" ]] && _stats+="  ·  "
+            _stats+="${MODULES_SKIPPED} skipped"
+        }
+        [[ -n "$_stats" ]] && printf "  %s\n" "$_stats"
+        echo ""
+    fi
+
     if [[ "$skip_identity" == "0" ]] && [[ -n "$git_name" ]]; then
-        printf "  ${DIM}Git${NC}   %s <%s>\n" "$git_name" "$git_email"
+        printf "  ${BOLD}Git${NC}    %s <%s>\n" "$git_name" "$git_email"
         echo ""
     fi
 
     printf "  ${BOLD}Next${NC}   exec zsh\n"
-    printf "         ${DIM}or: exec bash${NC}\n"
+    printf "         ${DIM}or exec bash${NC}\n"
     echo ""
-    printf "  ${DIM}Log    %s${NC}\n" "$log_display"
+    printf "  ${DIM}Log${NC}    %s\n" "$log_display"
 
     if [[ "$skip_identity" == "1" ]]; then
         echo ""
-        printf "  ${DIM}Run identity setup later:  ./bin/install --skip-modules${NC}\n"
+        printf \
+            "  ${DIM}Identity:  ./bin/install --skip-modules${NC}\n"
     fi
 
     echo ""
