@@ -9,6 +9,11 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### ✨ Features
+- Mission Control UX: preflight briefing, per-module progress lines, and final
+  summary screen (`show_preflight`, `show_module_header`, `show_module_result`,
+  `show_launch_summary`) — display-only, no behavior change
+
 ### ♻️ Code Refactoring
 - Split `common.sh` into `pkg.sh`, `download.sh`, and `ui.sh` for separation of concerns
 - Moved orchestration logic from `bin/install` into `lib/module-base.sh`

@@ -16,7 +16,7 @@ Use this before every release. Work top to bottom. Do not skip steps.
 - [ ] `grep WIZ_VERSION lib/common.sh` matches target version
 - [ ] `grep 'version-' README.md` — anchor matches target version
 - [ ] `.release-please-manifest.json` — `"."` matches last *released* version (not next)
-- [ ] `lib/module-base.sh` banner uses `${WIZ_VERSION}` (not a hardcoded string)
+- [ ] `bash bin/install --version` reports the target version (uses `${WIZ_VERSION}`, not hardcoded)
 - [ ] Per-module `MODULE_VERSION` values updated if module logic changed
 
 ## 3. Changelog integrity
