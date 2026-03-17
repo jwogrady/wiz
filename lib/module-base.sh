@@ -743,7 +743,7 @@ show_statistics() {
 # run_module_installation: Top-level orchestrator — sort, plan, execute all modules
 # Requires init_config() to be defined by the caller (bin/install).
 run_module_installation() {
-    log "Wiz Module Installation v0.2.0"
+    log "Wiz Module Installation v${WIZ_VERSION}"
     echo ""
 
     # Reset counters for this run

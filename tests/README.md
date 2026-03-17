@@ -32,6 +32,9 @@ npm install -g bats               # anywhere
 | `test_is_module_complete.bats` | `is_module_complete()` / `get_module_state()` — state transitions |
 | `test_get_install_order.bats` | `get_install_order()` — topological sort, diamond deps, circular detection |
 | `test_has_ssh_keys.bats` | `has_ssh_keys()` — directory content classification |
+| `test_wiz_download_verified.bats` | `wiz_download_verified()` — download + SHA-256 verification |
+| `test_wiz_add_shell_block.bats` | `wiz_add_shell_block()` — shell rc-file block append |
+| `test_wiz_update_shell_block.bats` | `wiz_update_shell_block()` — shell rc-file block replace |
 
 ## Adding a New Suite
 
@@ -42,8 +45,10 @@ npm install -g bats               # anywhere
    setup()    { _common_setup;    source "${WIZ_ROOT}/lib/<target>.sh"; }
    teardown() { _common_teardown; }
    ```
-3. Write `@test` blocks. Use `run` for functions whose exit code you want to
+3. Write `@test` blocks. Use `bats_run` for functions whose exit code you want to
    assert; use direct calls for output capture.
+   **Note:** `run` is clobbered by wiz's `run()` wrapper when any wiz library is
+   sourced. Always use `bats_run` (aliased in `_common_setup`) in test files.
 
 ## Test Helper (`helpers/common_setup.bash`)
 

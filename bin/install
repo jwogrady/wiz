@@ -212,7 +212,9 @@ parse_args() {
                 exit 0
             ;;
             *)
-                warn "Unknown option: $1 (use --help for usage)"
+                error "Unknown option: $1"
+                echo "Run './bin/install --help' for usage." >&2
+                exit 2
             ;;
         esac
         shift

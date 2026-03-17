@@ -27,9 +27,19 @@ if ! command -v bats >/dev/null 2>&1; then
     exit 1
 fi
 
-# If no file arguments given, run all .bats files in the tests directory
-if [[ $# -eq 0 ]]; then
-    exec bats "${TESTS_DIR}"/*.bats
-fi
+# Separate bats options (args starting with -) from test file arguments
+bats_opts=()
+bats_files=()
+for arg in "$@"; do
+    if [[ "$arg" == -* ]]; then
+        bats_opts+=("$arg")
+    else
+        bats_files+=("$arg")
+    fi
+done
 
-exec bats "$@"
+if [[ ${#bats_files[@]} -eq 0 ]]; then
+    exec bats "${bats_opts[@]+"${bats_opts[@]}"}" "${TESTS_DIR}"/*.bats
+else
+    exec bats "${bats_opts[@]+"${bats_opts[@]}"}" "${bats_files[@]}"
+fi

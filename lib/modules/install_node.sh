@@ -37,7 +37,7 @@ NVM_DIR="${HOME}/.nvm"
 # Must be set — installation aborts if empty (fail-closed security posture).
 # To obtain: curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | sha256sum
 # Update this constant whenever NVM_VERSION is bumped.
-NVM_INSTALLER_SHA256=""
+NVM_INSTALLER_SHA256="8e45fa547f428e9196a5613efad3bfa4d4608b74ca870f930090598f5af5f643"
 
 # Shell init block — identical content for both bash and zsh
 _NVM_SHELL_BLOCK='

@@ -1,4 +1,5 @@
 # Wiz — Terminal Magic
+<!-- version-0.4.0 -->
 
 Modular developer environment bootstrapper for WSL / Debian-based Linux.
 Installs and configures: Zsh + Oh My Zsh, Starship prompt, Node.js (via NVM),
@@ -129,7 +130,10 @@ wiz/
     ├── test_parse_state_value.bats
     ├── test_is_module_complete.bats
     ├── test_get_install_order.bats
-    └── test_has_ssh_keys.bats
+    ├── test_has_ssh_keys.bats
+    ├── test_wiz_download_verified.bats
+    ├── test_wiz_add_shell_block.bats
+    └── test_wiz_update_shell_block.bats
 ```
 
 ### Library sourcing chain
@@ -201,7 +205,7 @@ Then:
 
 ## Requirements
 
-- Bash 4.1+ (required for `exec {fd}>>file` persistent FD syntax)
+- Bash 4.3+ (required for `local -n` nameref)
 - `git`, `ssh-agent`, `tar` (checked at startup by `bin/install`)
 - `curl` or `wget` (for downloads; both are optional individually)
 - Intended for WSL2 or native Debian/Ubuntu Linux

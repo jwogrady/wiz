@@ -91,9 +91,6 @@ ls ~/.wiz/cache/ssh_fingerprints/        # SSH fingerprint cache
 ## Docs
 
 ```
-docs/STATUS26_BASH_STYLE_GUIDE_v1.md
-docs/CONVENTIONAL_COMMITS_SETUP.md
-docs/SSH_KEYS.md
-docs/RELEASE.md
-docs/CODE_REVIEW.md
+docs/RELEASE.md        # release pre-flight checklist
+docs/CHEAT_SHEET.md    # this file
 ```
