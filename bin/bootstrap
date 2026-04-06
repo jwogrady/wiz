@@ -11,6 +11,9 @@
 #   # Install from a specific branch:
 #   curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/<branch>/bin/bootstrap | WIZ_BRANCH=<branch> bash
 #
+#   # Pass options to the installer:
+#   curl -fsSL .../bin/bootstrap | WIZ_ARGS="--keys-path=/mnt/d/OneDrive/keys.tar.gz" bash
+#
 # ==============================================================================
 
 set -euo pipefail
@@ -104,7 +107,14 @@ main() {
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    exec ./bin/install "$@"
+    # When piped via curl, $@ is empty. WIZ_ARGS lets users pass installer
+    # options through the pipe: curl ... | WIZ_ARGS="--flag" bash
+    local -a install_args=("$@")
+    if [[ ${#install_args[@]} -eq 0 && -n "${WIZ_ARGS:-}" ]]; then
+        IFS=' ' read -ra install_args <<< "$WIZ_ARGS"
+    fi
+
+    exec ./bin/install "${install_args[@]}"
 }
 
 main "$@"
