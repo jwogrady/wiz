@@ -288,7 +288,13 @@ main() {
     
     debug "Starting Wiz installation"
     echo ""
-    
+
+    # Early validation: verify --keys-path file exists before doing anything
+    if [[ -n "$KEYS_PATH" ]] && [[ ! -f "$KEYS_PATH" ]]; then
+        error "Keys archive not found: $KEYS_PATH"
+        exit 1
+    fi
+
     # PHASE 1: Development Tools Installation (unless skipped)
     if [[ $SKIP_MODULES -eq 0 ]]; then
         log "━━━ PHASE 1: Development Tools Installation ━━━"
@@ -306,30 +312,39 @@ main() {
             log "━━━ PHASE 2: Identity & SSH Setup ━━━"
             echo ""
         fi
-        
+
         # Check prerequisites
         check_requirements
-        
+
         # Load .env early if it exists (may contain WIN_USER from bootstrap)
         if [[ -f "${WIZ_ROOT}/.env" ]]; then
             _load_env "${WIZ_ROOT}/.env"
             debug "Loaded existing .env configuration"
         fi
-        
-        # Interactive setup
-        write_env
-        echo ""
-        
-        # Configure Git
-        configure_git
-        echo ""
-        
-        # Setup SSH (import keys if needed, then configure agent)
+
+        # Interactive setup — returns non-zero if identity is incomplete
+        # (e.g. non-interactive mode without --name/--email/--github)
+        local identity_ok=1
+        if write_env; then
+            echo ""
+            configure_git
+            echo ""
+            identity_ok=0
+        else
+            echo ""
+        fi
+
+        # Always import SSH keys when --keys-path is provided,
+        # even if identity prompts were skipped
         import_ssh_keys
         configure_ssh_agent
         echo ""
-        
-        success "Identity configured: ${GIT_NAME} <${GIT_EMAIL}>"
+
+        if [[ $identity_ok -eq 0 ]]; then
+            success "Identity configured: ${GIT_NAME} <${GIT_EMAIL}>"
+        else
+            warn "SSH keys imported. Run with --name/--email/--github to complete identity setup."
+        fi
         echo ""
     fi
     

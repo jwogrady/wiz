@@ -134,17 +134,21 @@ write_env() {
         fi
     fi
 
-    # Interactive prompts if values not provided via CLI
-    if [[ -z "$GIT_NAME" ]]; then
-        read -rp "Enter your full name (for Git commits): " GIT_NAME
-    fi
+    # Interactive prompts if values not provided via CLI.
+    # When stdin is not a terminal (e.g. curl pipe), skip prompts and
+    # continue with whatever values were provided via CLI args.
+    if [[ -t 0 ]]; then
+        if [[ -z "$GIT_NAME" ]]; then
+            read -rp "Enter your full name (for Git commits): " GIT_NAME
+        fi
 
-    if [[ -z "$GIT_EMAIL" ]]; then
-        read -rp "Enter your email (for Git commits): " GIT_EMAIL
-    fi
+        if [[ -z "$GIT_EMAIL" ]]; then
+            read -rp "Enter your email (for Git commits): " GIT_EMAIL
+        fi
 
-    if [[ -z "$GITHUB_USERNAME" ]]; then
-        read -rp "Enter your GitHub username: " GITHUB_USERNAME
+        if [[ -z "$GITHUB_USERNAME" ]]; then
+            read -rp "Enter your GitHub username: " GITHUB_USERNAME
+        fi
     fi
 
     # Auto-detect Windows username if not provided (no prompt needed)
@@ -155,8 +159,13 @@ write_env() {
         fi
     fi
 
-    # Validate inputs
+    # Validate inputs — if running non-interactively and values are missing,
+    # return early so the caller can still proceed with SSH key import.
     if [[ -z "$GIT_NAME" ]] || [[ -z "$GIT_EMAIL" ]] || [[ -z "$GITHUB_USERNAME" ]]; then
+        if [[ ! -t 0 ]]; then
+            warn "Git identity not configured (pass --name, --email, --github for non-interactive mode)"
+            return 1
+        fi
         error "Name, email, and GitHub username are required"
         exit 1
     fi
