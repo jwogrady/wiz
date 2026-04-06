@@ -11,6 +11,52 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.6.0] — 2026-04-06
+
+### ✨ Features
+- Non-interactive curl-pipe installs: `WIZ_ARGS` env var forwards CLI flags
+  through `curl | bash` (e.g. `--keys-path`, `--name`, `--email`, `--github`)
+- `WIZ_BRANCH` env var for bootstrap from a specific Git branch
+- Pre-flight phase: identity prompts and `--keys-path` validation run before
+  any module installation — no more prompts after a long install
+- Non-interactive stdin detection (`[[ -t 0 ]]`): skips interactive prompts
+  when piped, warns if identity values missing
+- Nerd Font reminder on WSL: starship module shows Windows Terminal font setup
+  instructions after installing the Cosmic Oasis preset
+
+### 🐛 Bug Fixes
+- Fixed bun module crash: `run()` emitted a spurious empty line that corrupted
+  temp file paths when called inside `$()` command substitution
+- Fixed module dependency ordering: `discover_modules()` ran in a process
+  substitution subshell, so `MODULE_DEPS_MAP` was empty in the parent shell —
+  modules ran alphabetically instead of in dependency order
+- Fixed starship installer: removed invalid `--` separator that starship's
+  `install.sh` treated as an unknown option
+- Fixed SSH key archive import and starship fallback: removed
+  `--no-absolute-names` tar flag unsupported by GNU tar (Ubuntu)
+- Fixed npm not found during node module: re-source NVM after install so
+  node/npm are on PATH for subsequent npm config commands
+- Fixed ANSI escape leak in summary: `echo` without `-e` caused raw `\033`
+  codes in "Next Steps" output
+- Fixed installer aborting before final summary: `configure_ssh_agent()` failure
+  no longer kills the script — produces a warning instead
+- Final summary now always displays on both success and failure
+- Starship Nerd Font detection: removed false-positive regex that matched
+  standard fonts (DejaVu, Ubuntu Mono) as Nerd Fonts; always installs full
+  preset now
+
+### ⚡ Performance Improvements
+- `run()` and `run_shell()` now stream output through a pipe filter instead of
+  buffering all stdout into a bash string — constant memory for large apt output
+- Neovim module uses `run_stream` for apt-get and snap installs
+
+### 📚 Documentation
+- README: added non-interactive curl-pipe examples, execution flow diagram,
+  troubleshooting section, module authoring guide, `WIZ_BRANCH`/`WIZ_ARGS`
+  environment variables
+
+---
+
 ## [0.5.0] — 2026-03-16
 
 ### ✨ Features
