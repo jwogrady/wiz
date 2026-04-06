@@ -173,6 +173,16 @@ install_node() {
     }
     set -u
 
+    # Ensure node/npm are on PATH in the current shell.
+    # NVM commands above run in subshells (via run_shell), so their PATH
+    # changes are lost. Re-source NVM to pick up the installed node.
+    set +u
+    export NVM_DIR="${HOME}/.nvm"
+    # shellcheck source=/dev/null
+    [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
+    set -u
+    add_to_path "${HOME}/.nvm/versions/node/$(node -v 2>/dev/null || echo v0)/bin" 2>/dev/null || true
+
     # Configure npm
     log "Configuring npm..."
     run npm config set fund false || warn "Failed to disable funding messages"

@@ -424,9 +424,11 @@ run() {
     local output
     output=$("$@" 2>&1) || exit_code=$?
 
-    # Filter harmless systemd warnings from apt
+    # Filter harmless systemd warnings from apt.
+    # Output goes to stderr so it never contaminates stdout when run()
+    # is called inside $() command substitution (e.g. download_to_temp).
     if [[ -n "$output" ]]; then
-        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' >&2 || true
     fi
 
     _wiz_run_post "$exit_code" "$display_cmd"
@@ -480,9 +482,10 @@ run_shell() {
     local output
     output=$(eval "$cmd" 2>&1) || exit_code=$?
 
-    # Filter harmless systemd warnings from apt
+    # Filter harmless systemd warnings from apt.
+    # Output goes to stderr (see run() for rationale).
     if [[ -n "$output" ]]; then
-        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' >&2 || true
     fi
 
     _wiz_run_post "$exit_code" "$cmd"
