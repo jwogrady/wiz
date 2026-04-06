@@ -12,7 +12,14 @@ Bun, Neovim, essential system packages, SSH keys, and Git identity.
 curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/master/bin/bootstrap | bash
 ```
 
-Or, if you already have the repo:
+### Non-interactive (one-liner with SSH keys + identity)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/master/bin/bootstrap \
+  | WIZ_ARGS="--keys-path=/mnt/d/OneDrive/keys.tar.gz --name='Jane Doe' --email=jane@example.com --github=janedoe" bash
+```
+
+### From a cloned repo
 
 ```bash
 git clone https://github.com/jwogrady/wiz.git ~/wiz
@@ -72,8 +79,15 @@ Version overrides:
 # Non-interactive (all values pre-supplied)
 ./bin/install --name="Jane Doe" --email="jane@example.com" --github="janedoe"
 
+# Import SSH keys from an archive
+./bin/install --keys-path=/mnt/d/OneDrive/keys.tar.gz
+
 # Preview what would happen, make no changes
 ./bin/install --dry-run
+
+# Install from a specific branch
+curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/my-branch/bin/bootstrap \
+  | WIZ_BRANCH=my-branch bash
 ```
 
 ## Modules
@@ -168,6 +182,15 @@ warning but do not stop installation.
 
 ## Environment Variables
 
+### Bootstrap variables (used with `curl | bash`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WIZ_BRANCH` | `master` | Git branch to clone/checkout |
+| `WIZ_ARGS` | `` | Arguments forwarded to `./bin/install` (for curl-pipe mode) |
+
+### Installer variables
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WIZ_DRY_RUN` | `0` | `1` = print commands, skip execution |
@@ -202,6 +225,109 @@ Then:
 ./tests/run_tests.sh --tap         # TAP output (for CI)
 ./tests/run_tests.sh tests/test_has_ssh_keys.bats   # single suite
 ```
+
+## Execution Flow
+
+```
+curl | bash
+  └── bin/bootstrap         Clone repo, exec bin/install
+        └── bin/install     Parse args, show banner
+              │
+              ├── PRE-FLIGHT
+              │   ├── Validate --keys-path (fail fast)
+              │   └── Collect identity (prompt or --name/--email/--github)
+              │
+              ├── PHASE 1: Module Installation
+              │   ├── Resolve dependency order (topological sort)
+              │   ├── Show preflight summary
+              │   └── Execute modules in order (subshell each)
+              │       essentials → {bun, neovim, node} → zsh → starship → summary
+              │
+              └── PHASE 2: Identity & SSH
+                  ├── Configure git (user.name, user.email, .gitignore_global)
+                  ├── Import SSH keys (--keys-path → Windows home → generate new)
+                  └── Configure ssh-agent in shell RC files
+```
+
+When piped from `curl`, stdin is not a terminal. The installer detects this and
+skips interactive prompts. Pass identity via `WIZ_ARGS` or run Phase 2 later
+with `./bin/install --skip-modules`.
+
+## Troubleshooting
+
+### Module failed — how to retry
+
+Modules track completion in `~/.wiz/state/`. To retry a failed module:
+
+```bash
+./bin/install --module=bun --force
+```
+
+### SSH keys not imported
+
+Verify the archive format — must be a `.tar.gz` containing `id_*` key files
+(either at the root or inside a `.ssh/` subdirectory):
+
+```bash
+tar tzf keys.tar.gz   # should list id_ed25519, id_ed25519.pub, etc.
+```
+
+### Phase 2 skipped during curl-pipe install
+
+When piped from `curl`, interactive prompts are skipped. Either pass identity
+via `WIZ_ARGS` or run Phase 2 separately:
+
+```bash
+./bin/install --skip-modules --keys-path=/path/to/keys.tar.gz
+```
+
+### npm: command not found during node module
+
+The installer re-sources NVM after installing Node.js. If you still see this
+error, run `source ~/.bashrc` or `exec bash` to reload your shell.
+
+### Logs
+
+All output is logged to `~/wiz/logs/install_YYYY-MM-DD.log`. For verbose
+output: `./bin/install --verbose --debug`.
+
+## Adding a Module
+
+Create `lib/modules/install_mymod.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../module-base.sh"
+
+MODULE_NAME="mymod"
+MODULE_VERSION="0.1.0"
+MODULE_DESCRIPTION="My custom module"
+MODULE_DEPS="essentials"  # space-separated; "" = none; "ALL" = after everything
+
+describe_mymod() {
+    _module_banner "MY MODULE"
+    echo "Description of what this installs."
+}
+
+install_mymod() {
+    log "Installing mymod..."
+    # installation logic here
+    return 0
+}
+
+verify_mymod() {
+    if ! command_exists mymod; then return 1; fi
+    success "mymod verified"
+    return 0
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    execute_module "mymod"
+fi
+```
+
+The module is auto-discovered on next run — no registration needed.
 
 ## Requirements
 
