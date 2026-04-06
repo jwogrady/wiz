@@ -135,10 +135,10 @@ show_completion_report() {
     
     # Next steps
     log "Next Steps:"
-    echo "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
-    echo "  2. Verify tools are working: ${BOLD}node --version${NC}, ${BOLD}nvim --version${NC}"
-    echo "  3. Configure your editor: ${BOLD}nvim ~/.config/nvim/init.lua${NC}"
-    echo "  4. Customize Starship: ${BOLD}nvim ~/.config/starship.toml${NC}"
+    echo -e "  1. Restart your terminal or run: ${BOLD}source ~/.zshrc${NC}"
+    echo -e "  2. Verify tools are working: ${BOLD}node --version${NC}, ${BOLD}nvim --version${NC}"
+    echo -e "  3. Configure your editor: ${BOLD}nvim ~/.config/nvim/init.lua${NC}"
+    echo -e "  4. Customize Starship: ${BOLD}nvim ~/.config/starship.toml${NC}"
     echo ""
     
     success "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

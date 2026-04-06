@@ -419,15 +419,17 @@ run() {
         return 0
     fi
 
-    # Execute command directly - safe, no eval
+    # Execute command, streaming output through a filter to stderr.
+    # Previous implementation captured ALL output into a string then echoed it,
+    # which was wasteful for commands producing megabytes of output (apt-get).
+    # Now we pipe directly, avoiding large string allocations.
+    # Output goes to stderr so it never contaminates stdout when run()
+    # is called inside $() command substitution (e.g. download_to_temp).
     local exit_code=0
-    local output
-    output=$("$@" 2>&1) || exit_code=$?
-
-    # Filter harmless systemd warnings from apt
-    if [[ -n "$output" ]]; then
-        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
-    fi
+    "$@" 2>&1 \
+        | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' >&2 \
+        || true
+    exit_code=${PIPESTATUS[0]}
 
     _wiz_run_post "$exit_code" "$display_cmd"
 }
@@ -475,15 +477,13 @@ run_shell() {
         return 0
     fi
 
-    # Execute with eval - required for pipes and redirects
+    # Execute with eval - required for pipes and redirects.
+    # Stream output through filter to stderr (see run() for rationale).
     local exit_code=0
-    local output
-    output=$(eval "$cmd" 2>&1) || exit_code=$?
-
-    # Filter harmless systemd warnings from apt
-    if [[ -n "$output" ]]; then
-        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
-    fi
+    eval "$cmd" 2>&1 \
+        | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' >&2 \
+        || true
+    exit_code=${PIPESTATUS[0]}
 
     _wiz_run_post "$exit_code" "$cmd"
 }
