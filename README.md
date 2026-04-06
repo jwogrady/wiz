@@ -1,5 +1,5 @@
 # Wiz — Terminal Magic
-<!-- version-0.5.0 -->
+<!-- version-0.6.0 -->
 
 Modular developer environment bootstrapper for WSL / Debian-based Linux.
 Installs and configures: Zsh + Oh My Zsh, Starship prompt, Node.js (via NVM),

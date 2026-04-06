@@ -64,7 +64,7 @@ readonly NC="${COLOR_NC}"
 # This prevents pollution of the global namespace and makes dependencies explicit
 
 # Version information
-readonly WIZ_VERSION="0.5.0"
+readonly WIZ_VERSION="0.6.0"
 readonly WIZ_CODENAME="Terminal Magic"
 
 # Directory configuration (readonly after initialization)
