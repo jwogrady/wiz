@@ -8,6 +8,9 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/master/bin/bootstrap | bash
 #
+#   # Install from a specific branch:
+#   curl -fsSL https://raw.githubusercontent.com/jwogrady/wiz/<branch>/bin/bootstrap | WIZ_BRANCH=<branch> bash
+#
 # ==============================================================================
 
 set -euo pipefail
@@ -67,19 +70,24 @@ main() {
 
     # Define installation directory
     local WIZ_DIR="${HOME}/wiz"
+    local branch="${WIZ_BRANCH:-master}"
 
     # Clone or update repository
     if [[ -d "$WIZ_DIR" ]]; then
         log "Wiz directory already exists at ${WIZ_DIR}"
         log "Updating existing repository..."
         cd "$WIZ_DIR"
-        git pull origin master 2>/dev/null || {
+        git fetch origin "$branch" 2>/dev/null || true
+        git checkout "$branch" 2>/dev/null || {
+            warn "Could not checkout branch ${branch}, using current"
+        }
+        git pull origin "$branch" 2>/dev/null || {
             warn "Could not update repository, using existing version"
         }
     else
         log "Cloning Wiz repository..."
-        git clone https://github.com/jwogrady/wiz.git "$WIZ_DIR" || error "Failed to clone repository"
-        success "Repository cloned to ${WIZ_DIR}"
+        git clone -b "$branch" https://github.com/jwogrady/wiz.git "$WIZ_DIR" || error "Failed to clone repository"
+        success "Repository cloned to ${WIZ_DIR} (branch: ${branch})"
     fi
 
     echo ""
