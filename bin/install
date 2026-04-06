@@ -288,48 +288,75 @@ main() {
     
     debug "Starting Wiz installation"
     echo ""
-    
-    # PHASE 1: Development Tools Installation (unless skipped)
-    if [[ $SKIP_MODULES -eq 0 ]]; then
-        log "━━━ PHASE 1: Development Tools Installation ━━━"
-        echo ""
-        
-        if ! run_module_installation; then
-            show_launch_summary "1" "" ""
-            exit 1
-        fi
+
+    # ==================================================================
+    # PRE-FLIGHT: Collect all input and validate before installing anything
+    # ==================================================================
+
+    # Validate --keys-path file exists before doing anything
+    if [[ -n "$KEYS_PATH" ]] && [[ ! -f "$KEYS_PATH" ]]; then
+        error "Keys archive not found: $KEYS_PATH"
+        exit 1
     fi
-    
-    # PHASE 2: Identity & SSH Setup (unless skipped)
+
+    # Collect identity info upfront (before Phase 1) so we don't prompt
+    # after a long install, and so curl-pipe installs work end-to-end.
+    local identity_ok=1
     if [[ $SKIP_IDENTITY -eq 0 ]]; then
-        if [[ $SKIP_MODULES -eq 0 ]]; then
-            log "━━━ PHASE 2: Identity & SSH Setup ━━━"
-            echo ""
-        fi
-        
-        # Check prerequisites
         check_requirements
-        
+
         # Load .env early if it exists (may contain WIN_USER from bootstrap)
         if [[ -f "${WIZ_ROOT}/.env" ]]; then
             _load_env "${WIZ_ROOT}/.env"
             debug "Loaded existing .env configuration"
         fi
-        
-        # Interactive setup
-        write_env
+
+        if write_env; then
+            identity_ok=0
+        fi
         echo ""
-        
-        # Configure Git
-        configure_git
+    fi
+
+    # ==================================================================
+    # PHASE 1: Development Tools Installation (unless skipped)
+    # ==================================================================
+    if [[ $SKIP_MODULES -eq 0 ]]; then
+        log "━━━ PHASE 1: Development Tools Installation ━━━"
         echo ""
-        
-        # Setup SSH (import keys if needed, then configure agent)
+
+        if ! run_module_installation; then
+            show_launch_summary "1" "" ""
+            exit 1
+        fi
+    fi
+
+    # ==================================================================
+    # PHASE 2: Apply Identity & SSH Setup (unless skipped)
+    # ==================================================================
+    if [[ $SKIP_IDENTITY -eq 0 ]]; then
+        if [[ $SKIP_MODULES -eq 0 ]]; then
+            log "━━━ PHASE 2: Identity & SSH Setup ━━━"
+            echo ""
+        fi
+
+        # Configure git if identity was collected
+        if [[ $identity_ok -eq 0 ]]; then
+            configure_git
+            echo ""
+        fi
+
+        # Import SSH keys (always attempt when --keys-path is provided)
         import_ssh_keys
         configure_ssh_agent
         echo ""
-        
-        success "Identity configured: ${GIT_NAME} <${GIT_EMAIL}>"
+
+        if [[ $identity_ok -eq 0 ]]; then
+            success "Identity configured: ${GIT_NAME} <${GIT_EMAIL}>"
+        elif [[ -n "$KEYS_PATH" ]]; then
+            warn "SSH keys imported. Run with --name/--email/--github to complete identity setup."
+        else
+            warn "Identity not configured. Re-run interactively or pass --name/--email/--github."
+        fi
         echo ""
     fi
     
