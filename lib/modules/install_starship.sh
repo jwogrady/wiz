@@ -122,7 +122,7 @@ install_starship() {
             log "[DRY-RUN] Would execute Starship installer: ${starship_tmp}"
             rm -f "$starship_tmp"
         else
-            run_shell "sh '${starship_tmp}' -- --yes${version_flag}" || {
+            run_shell "sh '${starship_tmp}' --yes${version_flag}" || {
                 rm -f "$starship_tmp"
                 warn "Official installer failed, trying alternative methods..."
                 install_starship_fallback
@@ -182,7 +182,7 @@ install_starship_fallback() {
         "Failed to download starship binary" || return 1
 
     log "Extracting starship binary..."
-    run tar --no-absolute-names -xzf "$temp_file" -C "$install_dir"
+    run tar -xzf "$temp_file" -C "$install_dir"
     run chmod +x "$install_dir/starship"
     run rm -f "$temp_file"
     
