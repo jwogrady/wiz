@@ -348,7 +348,7 @@ main() {
 
         # Import SSH keys (always attempt when --keys-path is provided)
         import_ssh_keys
-        configure_ssh_agent
+        configure_ssh_agent || warn "SSH agent configuration had issues"
         echo ""
 
         if [[ $identity_ok -eq 0 ]]; then
