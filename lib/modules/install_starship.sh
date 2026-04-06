@@ -211,55 +211,36 @@ configure_starship_config() {
         log "Existing config backed up"
     fi
     
-    # Check if Nerd Fonts are available FIRST (before copying preset)
-    # Improved detection: check multiple patterns and font family names
-    local use_nerd_fonts=0
-    if command_exists fc-list 2>/dev/null; then
-        # Check font family names (more reliable than full font names)
-        if fc-list : family | grep -qiE "nerd|hack|fira|meslo|jetbrains|cascadia|dejavu|source.*code|ubuntu.*mono" 2>/dev/null; then
-            use_nerd_fonts=1
-            debug "Nerd Fonts detected via family names, using full Cosmic Oasis preset"
-        # Also check full font names as fallback
-        elif fc-list | grep -qiE "nerd|hack.*nerd|fira.*nerd|meslo.*nerd|jetbrains.*nerd" 2>/dev/null; then
-            use_nerd_fonts=1
-            debug "Nerd Fonts detected via full names, using full Cosmic Oasis preset"
-        fi
-    fi
-    
-    # Additional check: If fontconfig shows any fonts with "Nerd" in name
-    if [[ $use_nerd_fonts -eq 0 ]] && command_exists fc-list 2>/dev/null; then
-        # Check for Nerd Font variants (case insensitive)
-        local font_check
-        font_check=$(fc-list 2>/dev/null | grep -oi "nerd" | head -1)
-        if [[ -n "$font_check" ]]; then
-            use_nerd_fonts=1
-            debug "Nerd Fonts detected via pattern match, using full Cosmic Oasis preset"
-        fi
-    fi
-    
-    # If Nerd Fonts not detected, use fallback immediately
-    if [[ $use_nerd_fonts -eq 0 ]]; then
-        log "Nerd Fonts not detected, using fallback configuration..."
-        create_fallback_config
-        return 0
-    fi
-    
-    # Only use the preset if Nerd Fonts are available
+    # Always install the full Cosmic Oasis preset (requires Nerd Fonts).
+    # On WSL, Nerd Fonts must be installed on the Windows host — we can't
+    # reliably detect them from inside WSL, so we install the preset and
+    # remind the user to set a Nerd Font in their terminal.
     if [[ -f "$STARSHIP_PRESET" ]]; then
-        progress "Installing Cosmic Oasis preset (Nerd Fonts detected)..."
-        
+        progress "Installing Cosmic Oasis preset..."
+
         # Copy the preset
         if run cp "$STARSHIP_PRESET" "$STARSHIP_CONFIG"; then
             success "Cosmic Oasis preset installed"
         else
             error "Failed to copy preset file"
-            warn "Falling back to configuration without Nerd Fonts..."
+            warn "Creating fallback configuration..."
             create_fallback_config
         fi
     else
         warn "Preset file not found: $STARSHIP_PRESET"
         warn "Creating fallback configuration..."
         create_fallback_config
+    fi
+
+    # Remind about Nerd Fonts on WSL
+    if is_wsl 2>/dev/null; then
+        echo ""
+        warn "Starship uses Nerd Font icons. Install a Nerd Font on Windows:"
+        log "  1. Download from https://www.nerdfonts.com/font-downloads"
+        log "     (recommended: JetBrainsMono Nerd Font)"
+        log "  2. Extract and install the .ttf files on Windows"
+        log "  3. Windows Terminal → Settings → Profile → Appearance → Font face"
+        log "     → Set to \"JetBrainsMono Nerd Font\""
     fi
     
     log "  ✓ Config saved to: $STARSHIP_CONFIG"
