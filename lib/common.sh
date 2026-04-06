@@ -425,7 +425,9 @@ run() {
     output=$("$@" 2>&1) || exit_code=$?
 
     # Filter harmless systemd warnings from apt
-    echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+    if [[ -n "$output" ]]; then
+        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+    fi
 
     _wiz_run_post "$exit_code" "$display_cmd"
 }
@@ -479,7 +481,9 @@ run_shell() {
     output=$(eval "$cmd" 2>&1) || exit_code=$?
 
     # Filter harmless systemd warnings from apt
-    echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+    if [[ -n "$output" ]]; then
+        echo "$output" | grep -v -E 'Failed to (stop|start).*service: Unit.*not loaded' || true
+    fi
 
     _wiz_run_post "$exit_code" "$cmd"
 }
