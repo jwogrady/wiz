@@ -82,11 +82,17 @@ register_module() {
 
 # discover_modules: Scan a directory for install_*.sh files and register each
 # Reads MODULE_NAME and MODULE_DEPS by parsing each file (no sourcing needed).
-# Prints discovered module names to stdout, one per line.
-# Usage: mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+# Populates MODULE_DEPS_MAP via register_module and stores discovered names
+# in the global DISCOVERED_MODULES array.
+# IMPORTANT: Must be called in the current shell (not a subshell/process
+# substitution) so that MODULE_DEPS_MAP updates are visible to the caller.
+# Usage: discover_modules "$MODULES_DIR"
+#        DEFAULT_MODULES=("${DISCOVERED_MODULES[@]}")
 discover_modules() {
     local modules_dir="$1"
     local module_file name deps
+
+    DISCOVERED_MODULES=()
 
     for module_file in "${modules_dir}"/install_*.sh; do
         [[ -f "$module_file" ]] || continue
@@ -103,7 +109,7 @@ discover_modules() {
         fi
 
         register_module "$name" "$deps"
-        echo "$name"
+        DISCOVERED_MODULES+=("$name")
     done
 }
 
@@ -560,7 +566,8 @@ MODULES_DIR="${WIZ_ROOT}/lib/modules"
 DISABLED_MODULES=()
 REQUESTED_MODULES=()
 # DEFAULT_MODULES is populated at startup by:
-#   mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+#   discover_modules "$MODULES_DIR"
+#   DEFAULT_MODULES=("${DISCOVERED_MODULES[@]}")
 DEFAULT_MODULES=()
 
 # Counters (reset at the start of each run_module_installation call)
