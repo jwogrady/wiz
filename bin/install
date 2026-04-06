@@ -320,13 +320,14 @@ main() {
     # ==================================================================
     # PHASE 1: Development Tools Installation (unless skipped)
     # ==================================================================
+    local install_failed=0
+
     if [[ $SKIP_MODULES -eq 0 ]]; then
         log "━━━ PHASE 1: Development Tools Installation ━━━"
         echo ""
 
         if ! run_module_installation; then
-            show_launch_summary "1" "" ""
-            exit 1
+            install_failed=1
         fi
     fi
 
@@ -359,9 +360,14 @@ main() {
         fi
         echo ""
     fi
-    
-    # Final launch summary
+
+    # Always show the final summary — on success or failure
     show_launch_summary "$SKIP_IDENTITY" "${GIT_NAME:-}" "${GIT_EMAIL:-}"
+
+    # Exit with failure if Phase 1 had errors
+    if [[ $install_failed -eq 1 ]]; then
+        exit 1
+    fi
 
     # Auto-reload shell if explicitly requested
     if [[ "${WIZ_AUTO_RELOAD_SHELL:-0}" == "1" ]]; then
