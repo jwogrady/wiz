@@ -271,7 +271,9 @@ init_config() {
 main() {
     # Discover modules and populate MODULE_DEPS_MAP before parsing args
     # (needed early so --list and --graph work correctly)
-    mapfile -t DEFAULT_MODULES < <(discover_modules "$MODULES_DIR")
+    # Must run in current shell so MODULE_DEPS_MAP is visible to get_install_order
+    discover_modules "$MODULES_DIR"
+    DEFAULT_MODULES=("${DISCOVERED_MODULES[@]}")
 
     # Parse arguments
     parse_args "$@"
